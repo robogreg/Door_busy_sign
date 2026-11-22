@@ -1,0 +1,8 @@
+{
+  "name": "door-sign-broker",
+  "private": true,
+  "description": "Apps Script status broker for the Door Sign. Tests run the rules under Node.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

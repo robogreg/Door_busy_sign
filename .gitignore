@@ -1,0 +1,4 @@
+.pio/
+.vscode/
+firmware/src/secrets.h
+broker/.clasp.json
