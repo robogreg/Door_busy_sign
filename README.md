@@ -60,6 +60,14 @@ clasp push && clasp deploy
 
 Then in the Apps Script editor run `doorSetup` once. It asks for read-only calendar access and logs a token. On the sign's Settings page, enter the web app URL (ends in `/exec`) and the token, then pick calendars.
 
+## Mood emoji
+
+The sign can show a mood face at the end of the status band, set from the control page or `/m/<mood>?k=PIN` bookmarks; it clears itself each morning. The 16 faces are reduced to the panel's three colors by `tools/gen_moods.py`:
+
+![Mood faces as rendered for the panel](docs/moods_preview.png)
+
+Emoji art: [OpenMoji](https://openmoji.org), the open-source emoji and icon project, by HfG Schwaebisch Gmuend. License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The converted bitmaps in `firmware/src/display/mood_bitmaps.h` are shared under the same license.
+
 ## Status
 
 M1 (bench bring-up), M2 (manual sign) and M3 (calendar) are done. M4 (polish: typography, quip editor, OTA, daily clean refresh) is next.

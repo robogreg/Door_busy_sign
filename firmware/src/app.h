@@ -36,6 +36,9 @@ struct App {
   door::Override ovr;
   door::CalendarData cal;
   BrokerState broker;
+  door::Mood mood = door::Mood::None;
+  int64_t moodSetAt = 0;       // epoch, for the morning reset
+  uint32_t galleryUntil = 0;   // millis(); mood gallery test screen while active
   // Snapshot computed by loop(), read by the web handlers.
   door::Status status;
   std::string timeLine;

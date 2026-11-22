@@ -80,14 +80,9 @@ bool parseDuration(const char* s, Duration& out) {
 
 Duration defaultDuration(State s) {
   Duration d;
-  switch (s) {
-    case State::Call: d.kind = DurKind::Minutes; d.minutes = 30; break;
-    case State::Meeting:
-    case State::Focus:
-    case State::Busy: d.kind = DurKind::Minutes; d.minutes = 60; break;
-    case State::Available: d.kind = DurKind::EndOfDay; break;  // M3: until next calendar event
-    default: d.kind = DurKind::Cleared; break;                 // away, gone, custom
-  }
+  // Every override rolls back to the calendar on its own unless told otherwise.
+  d.kind = DurKind::Minutes;
+  d.minutes = s == State::Call ? 30 : 60;
   return d;
 }
 
@@ -119,10 +114,6 @@ int64_t computeExpiry(State s, const Duration& d0, const Clock& c, const Calenda
   bool haveCal = calUsable(cal, c, cs, cu) && cu > c.now;
   bool inEvent = haveCal && cs != State::Available;
   if (c.valid && d.kind == DurKind::Event && inEvent) return cu;
-  if (c.valid && d.kind == DurKind::Default) {
-    if (s == State::Available && haveCal && cs == State::Available) return cu;  // next event start
-    if ((s == State::Meeting || s == State::Focus) && inEvent) return cu;
-  }
   if (d.kind == DurKind::Default || d.kind == DurKind::Event) d = defaultDuration(s);
   if (d.kind == DurKind::Cleared || !c.valid) return kUntilCleared;
   if (d.kind == DurKind::EndOfDay) return c.now + (kDay - c.secOfDay);
@@ -295,6 +286,43 @@ bool parseHHMM(const char* s, uint16_t& out) {
   if (m > 59 || h > 24 || (h == 24 && m != 0)) return false;
   out = (uint16_t)(h * 60 + m);
   return true;
+}
+
+namespace {
+struct MoodInfo {
+  const char* id;
+  const char* name;
+};
+const MoodInfo kMoods[] = {
+    {"none", "None"},         {"happy", "Happy"},     {"chill", "Chill"},
+    {"focused", "Focused"},   {"facepalm", "Facepalm"}, {"stressed", "Stressed"},
+    {"grumpy", "Grumpy"},     {"tired", "Tired"},     {"celebrating", "Celebrating"},
+    {"love", "Grateful"},     {"meh", "Meh"},         {"sick", "Under the weather"},
+    {"mindblown", "Mind blown"}, {"thinking", "Thinking"}, {"hungry", "Hungry"},
+    {"zen", "Zen"},           {"zipped", "Do not disturb"},
+};
+static_assert(sizeof(kMoods) / sizeof(kMoods[0]) == (size_t)Mood::Count, "mood table");
+}  // namespace
+
+const char* moodId(Mood m) { return kMoods[(int)m].id; }
+const char* moodName(Mood m) { return kMoods[(int)m].name; }
+
+bool parseMood(const char* id, Mood& out) {
+  if (!id) return false;
+  for (int i = 1; i < (int)Mood::Count; i++) {
+    if (strcmp(id, kMoods[i].id) == 0) {
+      out = (Mood)i;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool moodExpired(int64_t setAt, const Clock& c, const WorkHours& h) {
+  if (!c.valid || setAt <= 0) return false;
+  int64_t todayStart = c.now - c.secOfDay + (int64_t)h.startMin * 60;
+  if (c.now < todayStart) todayStart -= kDay;  // before today's start: compare with yesterday's
+  return setAt < todayStart && c.now >= todayStart;
 }
 
 uint32_t fnv1a(const std::string& s, uint32_t h) {

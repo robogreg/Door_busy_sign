@@ -11,6 +11,8 @@ void loadSettings();  // into app.settings
 void saveSettings();
 void loadOverride();  // into app.ovr
 void saveOverride();
+void loadMood();  // into app.mood / app.moodSetAt
+void saveMood();
 
 // Quip library
 void loadQuips();

@@ -81,14 +81,13 @@ struct Duration {
 // "clear" -> Cleared. Returns false on garbage or minutes outside 1..1440.
 bool parseDuration(const char* s, Duration& out);
 
-// Default override length per state (SPEC section 5).
+// Default override length: 30 min for a call, 1 h for everything else.
 Duration defaultDuration(State s);
 
-// Absolute expiry for a new override. With calendar data: "event" means until
-// the current calendar event ends; Available defaults to the next event start;
-// Meeting and Focus default to the current event end. Without it, state
-// defaults apply. If the clock is not valid, timed overrides become
-// until-cleared rather than guessing.
+// Absolute expiry for a new override. Default is 1 h (30 min for a call), so a
+// bare override always rolls back to the calendar. "event" means until the
+// current calendar event ends (state default if not in an event). If the clock
+// is not valid, timed overrides become until-cleared rather than guessing.
 int64_t computeExpiry(State s, const Duration& d, const Clock& c, const CalendarData* cal = nullptr);
 
 bool overrideActive(const Override& o, const Clock& c);
@@ -114,6 +113,21 @@ std::string formatTime(int32_t secOfDay);
 std::string formatWhen(const Clock& c, int64_t t);
 // The time line under the quip: "Free at 3:30 PM", "Free until 6:00 PM", "Back tomorrow".
 std::string timeLine(const Status& st, const Clock& c);
+
+// ---------- Mood emoji ----------
+
+enum class Mood : uint8_t {
+  None,
+  Happy, Chill, Focused, Facepalm, Stressed, Grumpy, Tired, Celebrating,  // classic 8
+  Love, Meh, Sick, MindBlown, Thinking, Hungry, Zen, Zipped,                // extended
+  Count
+};
+const char* moodId(Mood m);    // "grumpy"
+const char* moodName(Mood m);  // "Grumpy"
+bool parseMood(const char* id, Mood& out);
+// Mood clears each morning: true once the start of today's working hours has
+// passed since it was set (whether or not today is a working day).
+bool moodExpired(int64_t setAt, const Clock& c, const WorkHours& h);
 
 // FNV-1a, used for the render-on-change frame hash.
 uint32_t fnv1a(const std::string& s, uint32_t h = 2166136261u);

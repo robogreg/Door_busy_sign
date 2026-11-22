@@ -23,6 +23,8 @@ struct Frame {
   uint16_t dayStart = 8 * 60, dayEnd = 18 * 60;      // minutes, follows working hours
   std::vector<std::pair<uint16_t, uint16_t>> blocks;  // busy minutes
   int16_t nowMin = -1;                                // rounded to 15 min, -1 hides the tick
+  door::Mood mood = door::Mood::None;                 // face at the right end of the band
+  bool gallery = false;                               // test screen: all 16 mood faces
   uint32_t hash() const;
 };
 
@@ -39,3 +41,20 @@ void displayRequest(const Frame& f, bool force = false);
 bool displayBusy();
 uint32_t displayLastMs();
 uint32_t displayCount();
+
+// Renders what is on the panel now as a 4-bit BMP, streamed in 32-row slices so
+// it needs only a few KB of RAM. Safe to use from the web server task.
+class DisplayPreview {
+ public:
+  DisplayPreview();
+  ~DisplayPreview();
+  static size_t size();
+  // Fills buf with up to maxLen bytes of the BMP starting at index; returns bytes written.
+  size_t fill(uint8_t* buf, size_t maxLen, size_t index);
+
+ private:
+  struct Impl;
+  Impl* impl_;
+  DisplayPreview(const DisplayPreview&) = delete;
+  DisplayPreview& operator=(const DisplayPreview&) = delete;
+};

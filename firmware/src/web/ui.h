@@ -14,6 +14,7 @@ header h1{font-size:18px;margin:0;flex:1}nav button{background:none;border:0;col
 nav button.on{color:var(--ink);background:var(--bg);font-weight:600}
 main{max-width:720px;margin:0 auto;padding:16px}section{display:none}section.on{display:block}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.sign{display:block;width:100%;height:auto;aspect-ratio:5/3;border-radius:6px;border:8px solid #d9d6cf;background:#fff;image-rendering:auto}
 .preview{border-radius:8px;padding:28px 12px;text-align:center;font-weight:800;font-size:clamp(24px,7vw,40px);letter-spacing:.04em;border:1px solid var(--line)}
 .preview.red{background:var(--red);color:#fff}.preview.black{background:var(--black);color:#fff}.preview.none{background:#fff;color:#111}
 .sub{text-align:center;color:var(--muted);margin-top:10px;min-height:1.4em}.quip{font-style:italic}
@@ -31,6 +32,9 @@ input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:
 .days{display:flex;gap:6px;flex-wrap:wrap}.days label{display:flex;align-items:center;gap:4px;margin:0;color:var(--ink)}.days input{width:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:6px 0;border-bottom:1px solid var(--line)}td:first-child{color:var(--muted);width:40%}
 pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;background:var(--bg);padding:10px;border-radius:8px}
+.moods{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.mood{padding:8px 4px;border-radius:8px;border:2px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font:12px system-ui,sans-serif;text-align:center}
+.mood b{display:block;font-size:28px;line-height:1.2;font-weight:400}.mood.on{border-color:var(--accent);background:var(--bg)}
 .cal{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.cal input{width:auto}.cal span{flex:1}
 .cal .dot{width:12px;height:12px;border-radius:50%;flex:none}.cal select{width:auto;padding:6px}
 .links a{display:block;color:var(--accent);word-break:break-all;margin:4px 0;font-size:14px}
@@ -43,15 +47,15 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
 <main>
 <section id="home" class="on">
  <div class="card">
-  <div id="pv" class="preview none">...</div>
-  <div class="sub quip" id="pvq"></div><div class="sub" id="pvt"></div>
+  <h2>On the sign now</h2>
+  <img id="sign" class="sign" alt="Current sign image">
   <div class="sub" id="pvm"></div>
  </div>
  <div class="card">
   <h2>Set status</h2>
   <label>For how long</label>
   <div class="chips" id="dur">
-   <button class="chip on" data-d="">Default</button><button class="chip" data-d="15">15 min</button>
+   <button class="chip on" data-d="">Default (1 h)</button><button class="chip" data-d="15">15 min</button>
    <button class="chip" data-d="30">30 min</button><button class="chip" data-d="60">1 h</button>
    <button class="chip" data-d="120">2 h</button><button class="chip" data-d="eod">End of day</button>
    <button class="chip" data-d="clear">Until cleared</button>
@@ -72,6 +76,12 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
    <select id="cc"><option value="black">Black band</option><option value="red">Red band</option><option value="none">No band</option></select>
    <button class="btn" id="cgo">Show it</button>
   </div>
+ </div>
+ <div class="card">
+  <h2>Mood</h2>
+  <div class="moods" id="moods"></div>
+  <button class="btn ghost" id="mclr" style="margin-top:10px">Clear mood</button>
+  <div class="sub" style="text-align:left">Clears itself each morning at the start of working hours.</div>
  </div>
  <button class="btn ghost" id="clr" style="width:100%">Back to calendar</button>
 </section>
@@ -107,6 +117,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
 <section id="system">
  <div class="card"><h2>Device</h2><table id="sys"></table>
   <div class="row" style="margin-top:12px"><button class="btn ghost" id="rf">Redraw panel</button><button class="btn ghost" id="rb">Reboot</button></div>
+  <button class="btn ghost" id="gal" style="margin-top:10px;width:100%">Show all mood faces on the panel (3 min)</button>
  </div>
  <div class="card"><h2>Calendar broker</h2><table id="brk"></table><pre id="brkr" hidden></pre></div>
  <div class="card links"><h2>One-tap bookmarks</h2><div id="links"><p>Enter your PIN once (set any status) to generate links.</p></div></div>
@@ -117,6 +128,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
 <script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let pin=null;try{pin=localStorage.getItem('dsk')}catch(e){}
+let lastRenders=null;
 let dur='';
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),3500)}
 async function login(){
@@ -137,14 +149,24 @@ async function setState(s,extra=''){
  if(j){toast(j.message+'. Sign updates in about 30 s.');setTimeout(refresh,500)}}
 async function refresh(){
  try{const j=await (await fetch('/status.json')).json();
-  const pv=$('#pv');pv.className='preview '+j.band;pv.textContent=j.label||'...';
-  $('#pvq').textContent=j.quip||'';$('#pvt').textContent=j.timeLine||'';
-  $('#pvm').textContent=(j.manual?'Manual override':'Automatic')+(j.stale?' (calendar data stale)':'');
-  $('#clr').hidden=!j.manual}catch(e){}}
+  // Reload the sign image only when the panel has actually redrawn.
+  if(j.renders!==lastRenders){lastRenders=j.renders;$('#sign').src='/sign.bmp?r='+j.renders}
+  $('#pvm').textContent=(j.rendering?'Updating the sign now (about 30 s). ':'')+(j.manual?'Manual override':'Automatic')+(j.stale?' (calendar data stale)':'');
+  $('#clr').hidden=!j.manual;
+  $$('.mood').forEach(b=>b.classList.toggle('on',b.dataset.m===j.mood));$('#mclr').hidden=!j.mood;
+  if(j.mood)$('#pvm').textContent+=', mood: '+j.moodName}catch(e){}}
+const MOODS=[['happy','\u{1F600}','Happy'],['chill','\u{1F60E}','Chill'],['focused','\u{1F9D0}','Focused'],['facepalm','\u{1F926}','Facepalm'],
+ ['stressed','\u{1F630}','Stressed'],['grumpy','\u{1F620}','Grumpy'],['tired','\u{1F634}','Tired'],['celebrating','\u{1F973}','Celebrating'],
+ ['love','\u{1F60D}','Grateful'],['meh','\u{1F610}','Meh'],['sick','\u{1F912}','Under the weather'],['mindblown','\u{1F92F}','Mind blown'],
+ ['thinking','\u{1F914}','Thinking'],['hungry','\u{1F924}','Hungry'],['zen','\u{1F60C}','Zen'],['zipped','\u{1F910}','Do not disturb']];
+$('#moods').innerHTML=MOODS.map(([id,e,n])=>'<button class="mood" data-m="'+id+'"><b>'+e+'</b>'+n+'</button>').join('');
+async function setMood(id){const j=await call('/m/'+id);if(j){toast(j.message+'. Sign updates in about 30 s.');setTimeout(refresh,500)}}
+$$('.mood').forEach(b=>b.onclick=()=>setMood(b.dataset.m));$('#mclr').onclick=()=>setMood('clear');
 function renderLinks(){
  if(!pin)return;const b=location.origin,k='k='+encodeURIComponent(pin);
  const L=[['On a call 30 min','/s/call?d=30&'+k],['Meeting 1 h','/s/meeting?d=60&'+k],['Heads down 1 h','/s/focus?d=60&'+k],
-  ['Busy 1 h','/s/busy?d=60&'+k],['Away','/s/away?'+k],['Available','/s/available?'+k],['Back to calendar','/s/clear?'+k]];
+  ['Busy 1 h','/s/busy?d=60&'+k],['Away until cleared','/s/away?d=clear&'+k],['Available','/s/available?'+k],['Back to calendar','/s/clear?'+k]];
+ MOODS.forEach(([id,e,n])=>L.push(['Mood: '+n,'/m/'+id+'?'+k]));L.push(['Clear mood','/m/clear?'+k]);
  $('#links').innerHTML=L.map(([n,u])=>'<a href="'+u+'">'+n+': '+b+u+'</a>').join('')}
 $$('nav button').forEach(b=>b.onclick=()=>{
  $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
@@ -201,6 +223,7 @@ async function loadSystem(){const j=await (await fetch('/api/system',{headers:{A
  $('#brkr').hidden=!b.response;$('#brkr').textContent=b.response||'';
  if(j.log!==undefined)$('#log').textContent=j.log;renderLinks()}
 $('#rf').onclick=async()=>{if(await call('/api/refresh',{method:'POST'}))toast('Redrawing, about 30 s')};
+$('#gal').onclick=async()=>{if(await call('/api/gallery',{method:'POST'}))toast('Drawing all 16 faces, about 30 s')};
 $('#rb').onclick=async()=>{if(confirm('Reboot the sign?')&&await call('/api/reboot',{method:'POST'}))toast('Rebooting')};
-refresh();setInterval(refresh,10000);renderLinks();
+refresh();setInterval(refresh,5000);renderLinks();
 </script></body></html>)HTML";

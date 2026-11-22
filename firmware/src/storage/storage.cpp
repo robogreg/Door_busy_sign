@@ -109,6 +109,27 @@ void saveOverride() {
   p.end();
 }
 
+// ---------- mood ----------
+
+void loadMood() {
+  Preferences p;
+  p.begin("mood", true);
+  AppGuard g;
+  uint8_t m = p.getUChar("m", 0);
+  app.mood = m < (uint8_t)door::Mood::Count ? (door::Mood)m : door::Mood::None;
+  app.moodSetAt = p.getLong64("at", 0);
+  p.end();
+}
+
+void saveMood() {
+  Preferences p;
+  p.begin("mood", false);
+  AppGuard g;
+  p.putUChar("m", (uint8_t)app.mood);
+  p.putLong64("at", app.moodSetAt);
+  p.end();
+}
+
 // ---------- quips ----------
 
 struct Quip {

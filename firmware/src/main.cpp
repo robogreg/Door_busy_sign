@@ -84,6 +84,14 @@ static Frame buildFrame() {
     saveOverride();
   }
 
+  // Mood clears each morning at the start of working hours.
+  if (app.mood != door::Mood::None && door::moodExpired(app.moodSetAt, c, app.settings.hours)) {
+    logf("[state] mood %s cleared for the new day", door::moodId(app.mood));
+    app.mood = door::Mood::None;
+    app.moodSetAt = 0;
+    saveMood();
+  }
+
   door::Status st = door::resolve(c, app.ovr, app.settings.hours, app.cal);
   std::string key = std::string(door::stateId(st.state)) + "|" + st.label;
   if (key != gQuipKey || app.newQuip) {
@@ -103,6 +111,7 @@ static Frame buildFrame() {
   f.timeLine = app.timeLine;
   f.manual = st.manual;
   f.muted = st.state == door::State::Away || st.state == door::State::Gone;
+  f.mood = app.mood;
   f.footerRight = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no Wi-Fi";
 
   // Calendar extras: stale icon and the timeline strip.
@@ -132,6 +141,7 @@ void setup() {
   storageBegin();
   loadSettings();
   loadOverride();
+  loadMood();
   loadQuips();
   displayBegin();
 
@@ -168,14 +178,22 @@ void loop() {
   if (millis() - last >= 500) {
     last = millis();
     Frame f = buildFrame();
-    bool force, reboot;
+    bool force, reboot, gallery;
     {
       AppGuard g;
       force = app.forceRender;
       app.forceRender = false;
       reboot = app.reboot;
+      gallery = app.galleryUntil && (int32_t)(app.galleryUntil - millis()) > 0;
+      if (!gallery) app.galleryUntil = 0;
     }
-    if ((int32_t)(millis() - gBootHoldUntil) >= 0) displayRequest(f, force);
+    if (gallery) {
+      Frame gf;
+      gf.gallery = true;
+      displayRequest(gf);
+    } else if ((int32_t)(millis() - gBootHoldUntil) >= 0) {
+      displayRequest(f, force);
+    }
     if (reboot) {
       logf("[sys] reboot requested");
       delay(300);

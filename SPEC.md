@@ -93,14 +93,16 @@ Greg is super admin of REV's Workspace, so the web app can be deployed "execute 
 
 | State id | Label on sign | Source | Treatment | Default override length |
 |---|---|---|---|---|
-| `available` | AVAILABLE | Calendar (no event) or manual | Black on white | Until next calendar event |
-| `meeting` | IN A MEETING | Calendar or manual | White on red band | Until event end |
+| `available` | AVAILABLE | Calendar (no event) or manual | Black on white | 1 h |
+| `meeting` | IN A MEETING | Calendar or manual | White on red band | 1 h |
 | `call` | ON A CALL | Manual only | White on red band | 30 min |
-| `focus` | HEADS DOWN | Calendar (Focus Time) or manual | White on black band | Until event end / 1 h |
+| `focus` | HEADS DOWN | Calendar (Focus Time) or manual | White on black band | 1 h |
 | `busy` | BUSY | Calendar (solo event) or manual | White on black band | 1 h |
-| `away` | AWAY | Calendar (Out of Office) or manual | Black on white, muted | Until cleared |
+| `away` | AWAY | Calendar (Out of Office) or manual | Black on white, muted | 1 h |
 | `gone` | GONE FOR THE DAY | Outside working hours | Black on white, muted | Automatic |
-| `custom` | free text | Manual | User-chosen band (red/black/none) | Until cleared or chosen duration |
+| `custom` | free text | Manual | User-chosen band (red/black/none) | 1 h |
+
+A bare override (no duration given) always rolls back to the calendar on its own: 30 min for a call, 1 h for everything else (decided Nov 22, 2026). `d=clear` keeps it until cleared, `d=event` until the current calendar event ends.
 
 ## 6. Calendar rules (implemented in Apps Script)
 
@@ -178,7 +180,7 @@ Served by the ESP32 on port 80. Reachable at the sign's IP and `http://door.loca
 | `/s/meeting?d=60&k=PIN` | Meeting for 60 min |
 | `/s/busy?d=60&k=PIN` | Busy for 60 min |
 | `/s/focus?d=60&k=PIN` | Heads down |
-| `/s/away?k=PIN` | Away until cleared |
+| `/s/away?d=clear&k=PIN` | Away until cleared |
 | `/s/available?k=PIN` | Available (override) |
 | `/s/custom?m=Back+at+3&c=red&d=60&k=PIN` | Custom message |
 | `/s/clear?k=PIN` | Back to calendar |

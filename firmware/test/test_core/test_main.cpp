@@ -58,8 +58,13 @@ void test_expiry_defaults() {
   Duration def;
   TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, def, c));
   TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Meeting, def, c));
-  TEST_ASSERT_EQUAL_INT64(kUntilCleared, computeExpiry(State::Away, def, c));
-  TEST_ASSERT_EQUAL_INT64(kMidnight + 86400, computeExpiry(State::Available, def, c));
+  // Every bare override rolls back after an hour, including away and custom.
+  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Away, def, c));
+  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Available, def, c));
+  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Custom, def, c));
+  Duration clr;
+  parseDuration("clear", clr);
+  TEST_ASSERT_EQUAL_INT64(kUntilCleared, computeExpiry(State::Away, clr, c));
   Duration ev;
   ev.kind = DurKind::Event;  // no calendar yet: falls back to default
   TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, ev, c));
@@ -75,6 +80,8 @@ void test_expiry_explicit_and_invalid_clock() {
   parseDuration("clear", d);
   TEST_ASSERT_EQUAL_INT64(kUntilCleared, computeExpiry(State::Call, d, c));
   Clock bad;
+  Duration def;
+  TEST_ASSERT_EQUAL_INT64(kUntilCleared, computeExpiry(State::Away, def, bad));
   parseDuration("15", d);
   TEST_ASSERT_EQUAL_INT64(kUntilCleared, computeExpiry(State::Call, d, bad));
 }
@@ -338,15 +345,49 @@ void test_expiry_uses_calendar() {
   Duration ev;
   parseDuration("event", ev);
   TEST_ASSERT_EQUAL_INT64(end, computeExpiry(State::Call, ev, c, &m));
+  // Default ignores the calendar: always 1 h (call 30 min).
   Duration def;
-  TEST_ASSERT_EQUAL_INT64(end, computeExpiry(State::Meeting, def, c, &m));
-  TEST_ASSERT_EQUAL_INT64(end, computeExpiry(State::Focus, def, c, &m));
-  TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, def, c, &m));  // call stays 30 min
+  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Meeting, def, c, &m));
+  TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, def, c, &m));
 
   CalendarData a = cal(c, State::Available, kMidnight + 16 * 3600);
-  TEST_ASSERT_EQUAL_INT64(kMidnight + 16 * 3600, computeExpiry(State::Available, def, c, &a));
-  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Meeting, def, c, &a));  // not in an event
-  TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, ev, c, &a));      // event -> default
+  TEST_ASSERT_EQUAL_INT64(c.now + 60 * 60, computeExpiry(State::Available, def, c, &a));
+  TEST_ASSERT_EQUAL_INT64(c.now + 30 * 60, computeExpiry(State::Call, ev, c, &a));  // event -> default
+}
+
+// ---------- Mood ----------
+
+void test_mood_parse() {
+  Mood m;
+  TEST_ASSERT_TRUE(parseMood("grumpy", m));
+  TEST_ASSERT_EQUAL(Mood::Grumpy, m);
+  TEST_ASSERT_TRUE(parseMood("zipped", m));
+  TEST_ASSERT_EQUAL(Mood::Zipped, m);
+  TEST_ASSERT_FALSE(parseMood("none", m));  // "none" is clearing, not a mood
+  TEST_ASSERT_FALSE(parseMood("hangry", m));
+  for (int i = 1; i < (int)Mood::Count; i++) {
+    TEST_ASSERT_TRUE(parseMood(moodId((Mood)i), m));
+    TEST_ASSERT_EQUAL(i, (int)m);
+  }
+}
+
+void test_mood_clears_each_morning() {
+  WorkHours h;  // starts 8:00
+  Clock tue10 = at(2, 10, 0);
+  int64_t setMon = tue10.now - 86400;  // Monday 10:00
+  TEST_ASSERT_TRUE(moodExpired(setMon, tue10, h));
+  TEST_ASSERT_FALSE(moodExpired(tue10.now - 3600, tue10, h));  // set at 9:00 today
+
+  Clock tue7 = at(2, 7, 0);  // before today's start
+  TEST_ASSERT_FALSE(moodExpired(tue7.now - 3600, tue7, h));       // set at 6:00 today
+  TEST_ASSERT_FALSE(moodExpired(tue7.now - 12 * 3600, tue7, h));  // set last night at 19:00
+  TEST_ASSERT_TRUE(moodExpired(tue7.now - 24 * 3600, tue7, h));   // set yesterday 7:00, before yesterday's start
+
+  Clock tue8 = at(2, 8, 0);  // exactly at start
+  TEST_ASSERT_TRUE(moodExpired(tue8.now - 60, tue8, h));
+  Clock bad;
+  TEST_ASSERT_FALSE(moodExpired(123, bad, h));
+  TEST_ASSERT_FALSE(moodExpired(0, tue10, h));
 }
 
 int main(int, char**) {
@@ -371,5 +412,7 @@ int main(int, char**) {
   RUN_TEST(test_calendar_rolls_to_next_between_polls);
   RUN_TEST(test_old_calendar_data_ignored);
   RUN_TEST(test_expiry_uses_calendar);
+  RUN_TEST(test_mood_parse);
+  RUN_TEST(test_mood_clears_each_morning);
   return UNITY_END();
 }

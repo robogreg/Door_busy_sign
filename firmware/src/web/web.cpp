@@ -84,6 +84,8 @@ static void fillStatus(JsonDocument& d) {
   d["timeLine"] = app.timeLine;
   d["quip"] = app.quip;
   d["stale"] = app.stale;
+  d["mood"] = app.mood == door::Mood::None ? "" : door::moodId(app.mood);
+  d["moodName"] = app.mood == door::Mood::None ? "" : door::moodName(app.mood);
   d["calendar"] = app.cal.valid;
   JsonArray blocks = d["blocks"].to<JsonArray>();
   for (auto& b : app.cal.blocks) {
@@ -173,6 +175,37 @@ static void handleCommand(AsyncWebServerRequest* r, const String& cmd) {
   } else {
     sendPage(r, ok ? 200 : 400,
              ok ? msg + ".<br><small>The sign updates in about 30 seconds.</small>" : msg);
+  }
+}
+
+// ---------- mood ----------
+
+// /m/<mood>?k=PIN or /m/clear. Independent of status overrides; clears each morning.
+static void handleMood(AsyncWebServerRequest* r, const char* id) {
+  if (!authorized(r)) return denied(r);
+  door::Mood m = door::Mood::None;
+  bool ok = strcmp(id, "clear") == 0 || door::parseMood(id, m);
+  String msg;
+  if (ok) {
+    door::Clock c = nowClock();
+    {
+      AppGuard g;
+      app.mood = m;
+      app.moodSetAt = c.valid ? c.now : 0;
+    }
+    saveMood();
+    msg = m == door::Mood::None ? "Mood cleared" : String("Mood: ") + door::moodName(m);
+    logf("[web] mood %s", door::moodId(m));
+  } else {
+    msg = "Unknown mood.";
+  }
+  if (wantsJson(r)) {
+    JsonDocument d;
+    d["ok"] = ok;
+    d["message"] = msg;
+    sendJson(r, ok ? 200 : 400, d);
+  } else {
+    sendPage(r, ok ? 200 : 400, ok ? msg + ".<br><small>The sign updates in about 30 seconds.</small>" : msg);
   }
 }
 
@@ -358,7 +391,19 @@ void webBegin() {
   server.on("/status.json", HTTP_GET, [](AsyncWebServerRequest* r) {
     JsonDocument d;
     fillStatus(d);
+    d["renders"] = displayCount();  // changes when the panel shows something new
+    d["rendering"] = displayBusy();
     sendJson(r, 200, d);
+  });
+
+  // What the panel shows right now, as an image. Rendered on demand in slices.
+  server.on("/sign.bmp", HTTP_GET, [](AsyncWebServerRequest* r) {
+    auto pv = std::make_shared<DisplayPreview>();
+    AsyncWebServerResponse* resp = r->beginResponse(
+        "image/bmp", DisplayPreview::size(),
+        [pv](uint8_t* buf, size_t maxLen, size_t index) -> size_t { return pv->fill(buf, maxLen, index); });
+    resp->addHeader("Cache-Control", "no-store");
+    r->send(resp);
   });
 
   // One-tap endpoints: /s/<state>?d=&k=  (gone is automatic only)
@@ -367,6 +412,22 @@ void webBegin() {
     String path = String("/s/") + cmd;
     server.on(path.c_str(), HTTP_GET, [cmd](AsyncWebServerRequest* r) { handleCommand(r, cmd); });
   }
+
+  // Mood endpoints: /m/<mood>?k=  and /m/clear?k=
+  for (int i = 1; i <= (int)door::Mood::Count; i++) {
+    // moodId() returns string literals, safe to capture; the extra slot is "clear".
+    const char* cid = i < (int)door::Mood::Count ? door::moodId((door::Mood)i) : "clear";
+    server.on((String("/m/") + cid).c_str(), HTTP_GET, [cid](AsyncWebServerRequest* r) { handleMood(r, cid); });
+  }
+
+  server.on("/api/gallery", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (!authorized(r)) return denied(r);
+    {
+      AppGuard g;
+      app.galleryUntil = millis() + 180000;  // 3 minutes, then back to status
+    }
+    r->send(200, "application/json", "{\"ok\":true}");
+  });
 
   server.on("/login", HTTP_GET, [](AsyncWebServerRequest* r) {
     if (!authorized(r)) return denied(r);
