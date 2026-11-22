@@ -72,6 +72,18 @@ static void startTime() {
   else logf("[time] not synced yet, timed overrides wait for NTP");
 }
 
+// "Sunday, Nov 22", or empty before NTP sync.
+static std::string todayString() {
+  time_t t = time(nullptr);
+  struct tm lt;
+  if (t < 1700000000 || !localtime_r(&t, &lt)) return "";
+  static const char* const kDays[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+  static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%s, %s %d", kDays[lt.tm_wday], kMonths[lt.tm_mon], lt.tm_mday);
+  return buf;
+}
+
 static Frame buildFrame() {
   door::Clock c = nowClock();
   Frame f;
@@ -113,6 +125,7 @@ static Frame buildFrame() {
   f.manual = st.manual;
   f.muted = st.state == door::State::Away || st.state == door::State::Gone;
   f.mood = app.mood;
+  f.date = todayString();
   f.footerRight = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no Wi-Fi";
 
   // Calendar extras: stale icon and the timeline strip.

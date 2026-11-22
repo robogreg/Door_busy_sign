@@ -14,6 +14,7 @@ struct Frame {
   std::string name, title;
   std::string label, quip, timeLine;
   std::string footerRight;  // IP address
+  std::string date;         // "Sunday, Nov 22" in the footer; changes at midnight
   door::Band band = door::Band::None;
   bool muted = false;   // away / gone: outlined band
   bool manual = false;  // override icon in footer

@@ -42,6 +42,7 @@ uint32_t Frame::hash() const {
   h = door::fnv1a("|" + quip, h);
   h = door::fnv1a("|" + timeLine, h);
   h = door::fnv1a("|" + footerRight, h);
+  h = door::fnv1a("|" + date, h);
   char tail[48];
   snprintf(tail, sizeof(tail), "|%d%d%d%d%d|%u-%u|%d|m%d|g%d", (int)band, muted, manual, stale, strip, dayStart,
            dayEnd, strip ? nowMin : -1, (int)mood, gallery);
@@ -59,8 +60,9 @@ static const uint8_t* const kLabelFonts[] = {
     u8g2_font_logisoso58_tr, u8g2_font_logisoso50_tr, u8g2_font_logisoso42_tr,
     u8g2_font_logisoso34_tr, u8g2_font_logisoso28_tr, u8g2_font_logisoso22_tr,
 };
-static const uint8_t* const kQuipFonts[] = {u8g2_font_lubBI18_tf, u8g2_font_lubBI14_tf,
-                                            u8g2_font_lubBI12_tf};
+// Plain sans for the quip / meeting title, largest that fits on one line.
+static const uint8_t* const kQuipFonts[] = {u8g2_font_fur30_tf, u8g2_font_fur25_tf, u8g2_font_fur20_tf,
+                                            u8g2_font_fur17_tf, u8g2_font_fur14_tf};
 
 static uint16_t bandColor(door::Band b) {
   switch (b) {
@@ -201,6 +203,12 @@ struct Painter {
       u.setBackgroundColor(GxEPD_WHITE);
       x += tw + 10;
     };
+    // Today's date, centered and bold, so passers-by can see the sign is current.
+    if (!f.date.empty()) {
+      u.setFont(u8g2_font_helvB14_tf);
+      centered(f.date.c_str(), W / 2, 472);
+      u.setFont(u8g2_font_helvR12_tf);
+    }
     if (f.manual) tag("MANUAL", GxEPD_BLACK);
     if (f.stale) tag("STALE", GxEPD_RED);
     u.setCursor(x, 472);
