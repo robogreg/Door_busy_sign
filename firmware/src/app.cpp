@@ -14,10 +14,17 @@ void appLock() {
 
 void appUnlock() { xSemaphoreGiveRecursive(gLock); }
 
-door::Clock nowClock() {
+door::Clock nowClock() { return clockAt((int64_t)time(nullptr)); }
+
+bool simActive() {
+  AppGuard g;
+  return app.simUntil && (int32_t)(app.simUntil - millis()) > 0;
+}
+
+door::Clock clockAt(int64_t t64) {
   door::Clock c;
-  time_t t = time(nullptr);
-  if (t < 1700000000) return c;  // NTP not synced yet
+  time_t t = (time_t)t64;
+  if (time(nullptr) < 1700000000 || t < 1700000000) return c;  // NTP not synced yet
   struct tm lt;
   localtime_r(&t, &lt);
   c.valid = true;

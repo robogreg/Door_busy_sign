@@ -44,8 +44,8 @@ uint32_t Frame::hash() const {
   h = door::fnv1a("|" + footerRight, h);
   h = door::fnv1a("|" + date, h);
   char tail[48];
-  snprintf(tail, sizeof(tail), "|%d%d%d%d%d|%u-%u|%d|m%d|g%d", (int)band, muted, manual, stale, strip, dayStart,
-           dayEnd, strip ? nowMin : -1, (int)mood, gallery);
+  snprintf(tail, sizeof(tail), "|%d%d%d%d%d%d|%u-%u|%d|m%d|g%d", (int)band, muted, manual, stale, strip, sim,
+           dayStart, dayEnd, strip ? nowMin : -1, (int)mood, gallery);
   h = door::fnv1a(tail, h);
   if (strip) {
     for (auto& b : blocks) {
@@ -209,6 +209,7 @@ struct Painter {
       centered(f.date.c_str(), W / 2, 472);
       u.setFont(u8g2_font_helvR12_tf);
     }
+    if (f.sim) tag("PREVIEW", GxEPD_RED);
     if (f.manual) tag("MANUAL", GxEPD_BLACK);
     if (f.stale) tag("STALE", GxEPD_RED);
     u.setCursor(x, 472);
@@ -305,6 +306,10 @@ static void renderTask(void*) {
     if (h == gDrawnHash && !force) continue;
 
     door::Clock c = nowClock();
+    if (f.sim && c.valid) {
+      AppGuard g;  // a preview shows its own "Updated" time
+      c = clockAt(c.now + app.simOffset);
+    }
     std::string updated = c.valid ? door::formatTime(c.secOfDay) : "";
     logf("[epd] render '%s' / '%s'", f.label.c_str(), f.timeLine.c_str());
     gBusy = true;

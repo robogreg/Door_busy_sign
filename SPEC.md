@@ -137,6 +137,7 @@ A bare override (no duration given) always rolls back to the calendar on its own
 ```
 - `blocks`: today's busy time as start/end pairs only (for the timeline strip). No titles.
 - `until`: end of the current state (null if open-ended).
+- Optional `&at=<epoch seconds>` (within 90 days) computes the status as of that time, for the sign's time preview.
 - `title`: title of the event that sets the current state (highest priority, latest start on ties), null if none or private. `titleUntil` is that event's end, since back-to-back events share one `until`.
 
 `GET <script-url>?token=...&action=calendars`

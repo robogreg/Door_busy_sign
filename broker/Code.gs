@@ -1,6 +1,7 @@
 // Door Sign broker: web app entry point (SPEC section 6).
 //
-// GET ?token=...&action=status&cals=<id>:<mode>,...
+// GET ?token=...&action=status&cals=<id>:<mode>,...[&at=<epoch seconds>]
+//   at: compute the status as of another time (the sign's time preview).
 // GET ?token=...&action=calendars
 //
 // Script Properties: TOKEN (required), TZ (default America/Chicago).
@@ -21,7 +22,7 @@ function doGet(e) {
     var tz = props.getProperty("TZ") || "America/Chicago";
     var action = p.action || "status";
     if (action === "calendars") return doorJson_(doorCalendars_());
-    if (action === "status") return doorJson_(doorStatus_(p.cals || "", tz));
+    if (action === "status") return doorJson_(doorStatus_(p.cals || "", tz, doorAt_(p.at)));
     return doorJson_({ error: "unknown action" });
   } catch (err) {
     return doorJson_({ error: String((err && err.message) || err) });
@@ -45,9 +46,18 @@ function doorCalendars_() {
   return { calendars: items };
 }
 
-function doorStatus_(calsParam, tz) {
+// Optional preview time: epoch seconds within 90 days of now, else null.
+function doorAt_(param) {
+  var s = Number(param);
+  if (!param || !isFinite(s)) return null;
+  var ms = Math.round(s) * 1000;
+  return Math.abs(ms - Date.now()) <= 90 * 86400000 ? ms : null;
+}
+
+function doorStatus_(calsParam, tz, atMs) {
   var cache = CacheService.getScriptCache();
-  var key = "st:" + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, calsParam + "|" + tz));
+  var atKey = atMs ? "|" + Math.floor(atMs / 60000) : "";
+  var key = "st:" + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, calsParam + "|" + tz + atKey));
   var hit = cache.get(key);
   if (hit) return JSON.parse(hit);
 
@@ -58,7 +68,7 @@ function doorStatus_(calsParam, tz) {
   var fmt = function (ms, pattern) {
     return Utilities.formatDate(new Date(ms), tz, pattern);
   };
-  var now = Date.now();
+  var now = atMs || Date.now();
   var dayStart = localDateMs(fmt(now, "yyyy-MM-dd"));
   var dayEnd = localDateMs(fmt(dayStart + 36 * 3600000, "yyyy-MM-dd")); // DST-safe
   var windowEnd = dayEnd + 12 * 3600000; // look past midnight for "until"

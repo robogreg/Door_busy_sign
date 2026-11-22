@@ -68,6 +68,10 @@ The sign can show a mood face at the end of the status band, set from the contro
 
 Emoji art: [OpenMoji](https://openmoji.org), the open-source emoji and icon project, by HfG Schwaebisch Gmuend. License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The converted bitmaps in `firmware/src/display/mood_bitmaps.h` are shared under the same license.
 
+## Time preview
+
+The Status tab has a "Preview a time" card: pick a date and time and the sign (and the live preview image) shows what it would look like then, using your calendar for that moment. A red PREVIEW tag shows in the footer. Overrides and the mood are judged at that time but nothing is saved, and the sign goes back to the real time after 30 min or when you press "Back to the real time".
+
 ## Status
 
 M1 (bench bring-up), M2 (manual sign) and M3 (calendar) are done. M4 (polish: typography, quip editor, OTA, daily clean refresh) is next.

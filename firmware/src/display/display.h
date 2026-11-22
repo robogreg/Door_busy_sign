@@ -26,6 +26,7 @@ struct Frame {
   int16_t nowMin = -1;                                // rounded to 15 min, -1 hides the tick
   door::Mood mood = door::Mood::None;                 // face at the right end of the band
   bool gallery = false;                               // test screen: all 16 mood faces
+  bool sim = false;                                   // time preview: PREVIEW tag in the footer
   uint32_t hash() const;
 };
 

@@ -73,8 +73,8 @@ static void startTime() {
 }
 
 // "Sunday, Nov 22", or empty before NTP sync.
-static std::string todayString() {
-  time_t t = time(nullptr);
+static std::string dateString(int64_t t64) {
+  time_t t = (time_t)t64;
   struct tm lt;
   if (t < 1700000000 || !localtime_r(&t, &lt)) return "";
   static const char* const kDays[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
@@ -85,26 +85,44 @@ static std::string todayString() {
 }
 
 static Frame buildFrame() {
-  door::Clock c = nowClock();
   Frame f;
   AppGuard g;
 
-  // Expire a finished override.
-  if (app.ovr.active && !door::overrideActive(app.ovr, c)) {
-    logf("[state] override %s expired", door::stateId(app.ovr.state));
-    app.ovr = door::Override{};
-    saveOverride();
+  // Time preview: end it when its window runs out.
+  if (app.simUntil && !simActive()) {
+    logf("[sim] time preview ended");
+    app.simUntil = 0;
+    app.simOffset = 0;
+    app.simCal = door::CalendarData{};
   }
+  const bool sim = app.simUntil != 0;
+  const door::Clock real = nowClock();
+  const door::Clock c = sim && real.valid ? clockAt(real.now + app.simOffset) : real;
 
-  // Mood clears each morning at the start of working hours.
-  if (app.mood != door::Mood::None && door::moodExpired(app.moodSetAt, c, app.settings.hours)) {
-    logf("[state] mood %s cleared for the new day", door::moodId(app.mood));
-    app.mood = door::Mood::None;
-    app.moodSetAt = 0;
-    saveMood();
+  // Expire a finished override; clear the mood each morning. During a preview
+  // these are only applied to the picture, never saved.
+  door::Override ovr = app.ovr;
+  door::Mood mood = app.mood;
+  if (ovr.active && !door::overrideActive(ovr, c)) {
+    ovr = door::Override{};
+    if (!sim) {
+      logf("[state] override %s expired", door::stateId(app.ovr.state));
+      app.ovr = ovr;
+      saveOverride();
+    }
   }
+  if (mood != door::Mood::None && door::moodExpired(app.moodSetAt, c, app.settings.hours)) {
+    mood = door::Mood::None;
+    if (!sim) {
+      logf("[state] mood %s cleared for the new day", door::moodId(app.mood));
+      app.mood = mood;
+      app.moodSetAt = 0;
+      saveMood();
+    }
+  }
+  const door::CalendarData& cal = sim ? app.simCal : app.cal;
 
-  door::Status st = door::resolve(c, app.ovr, app.settings.hours, app.cal);
+  door::Status st = door::resolve(c, ovr, app.settings.hours, cal);
   std::string key = std::string(door::stateId(st.state)) + "|" + st.label;
   if (key != gQuipKey || app.newQuip) {
     app.quip = pickQuip(st.state, app.settings.humor);
@@ -124,23 +142,24 @@ static Frame buildFrame() {
   f.timeLine = app.timeLine;
   f.manual = st.manual;
   f.muted = st.state == door::State::Away || st.state == door::State::Gone;
-  f.mood = app.mood;
-  f.date = todayString();
+  f.mood = mood;
+  f.sim = sim;
+  f.date = dateString(c.now);
   f.footerRight = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no Wi-Fi";
 
   // Calendar extras: stale icon and the timeline strip.
   bool configured = !app.settings.brokerUrl.empty() && !app.settings.brokerToken.empty();
   const BrokerState& b = app.broker;
-  app.stale = configured && c.valid &&
-              (b.lastOk ? (c.now - b.lastOk > door::kStaleAfter) : millis() > door::kStaleAfter * 1000UL);
+  app.stale = configured && real.valid &&
+              (b.lastOk ? (real.now - b.lastOk > door::kStaleAfter) : millis() > door::kStaleAfter * 1000UL);
   f.stale = app.stale;
   int64_t midnight = c.now - c.secOfDay;
-  f.strip = configured && c.valid && app.cal.valid && app.cal.fetchedAt >= midnight &&
-            c.now - app.cal.fetchedAt <= door::kCalendarMaxAge;
+  f.strip = configured && c.valid && cal.valid && cal.fetchedAt >= midnight &&
+            c.now - cal.fetchedAt <= door::kCalendarMaxAge;
   if (f.strip) {
     f.dayStart = app.settings.hours.startMin;
     f.dayEnd = app.settings.hours.endMin;
-    f.blocks = app.cal.blocks;
+    f.blocks = cal.blocks;
     f.nowMin = (int16_t)((c.secOfDay / 60) / 15 * 15);
   }
   return f;

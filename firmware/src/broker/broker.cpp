@@ -35,7 +35,7 @@ void brokerKick() {
 }
 
 // GET <url>?token=..&action=..[&cals=..]. Returns HTTP body or sets err.
-static bool brokerGet(const char* action, std::string& body, std::string& err) {
+static bool brokerGet(const char* action, std::string& body, std::string& err, int64_t at = 0) {
   std::string base, token, cals;
   {
     AppGuard g;
@@ -47,6 +47,7 @@ static bool brokerGet(const char* action, std::string& body, std::string& err) {
   url += url.indexOf('?') >= 0 ? "&" : "?";
   url += "token=" + urlEncode(token) + "&action=" + action;
   if (strcmp(action, "status") == 0) url += "&cals=" + urlEncode(cals);
+  if (at) url += "&at=" + String((long long)at);
 
   WiFiClientSecure client;
   client.setCACert(kGoogleRootsPem);
@@ -110,11 +111,28 @@ static bool parseStatus(const std::string& body, door::CalendarData& out, std::s
 
 static void pollStatus() {
   std::string body, err;
-  bool ok = brokerGet("status", body, err);
+  // During a time preview, ask for the status as of the simulated time.
+  int64_t at = 0;
+  if (simActive()) {
+    AppGuard g;
+    door::Clock r = nowClock();
+    if (r.valid) at = r.now + app.simOffset;
+  }
+  bool ok = brokerGet("status", body, err, at);
   door::CalendarData d;
   if (ok) ok = parseStatus(body, d, err);
   door::Clock c = nowClock();
   AppGuard g;
+  if (at) {
+    if (ok && simActive()) {
+      d.fetchedAt = at;
+      app.simCal = d;
+      logf("[sim] calendar at preview time: %s", door::stateId(d.state));
+    } else if (!ok) {
+      logf("[sim] preview poll failed: %s", err.c_str());
+    }
+    return;
+  }
   app.broker.lastPollMs = millis();
   if (ok) {
     d.fetchedAt = c.valid ? c.now : 0;

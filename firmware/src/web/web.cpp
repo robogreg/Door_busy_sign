@@ -95,6 +95,16 @@ static void fillStatus(JsonDocument& d) {
   }
   d["name"] = app.settings.name;
   d["title"] = app.settings.title;
+  bool sim = simActive();
+  d["sim"] = sim;
+  if (sim) {
+    door::Clock r = nowClock();
+    if (r.valid) {
+      door::Clock s = clockAt(r.now + app.simOffset);
+      d["simAt"] = s.now;
+      d["simLeft"] = (int32_t)(app.simUntil - millis()) / 1000;
+    }
+  }
 }
 
 // ---------- override commands ----------
@@ -427,6 +437,57 @@ void webBegin() {
       app.galleryUntil = millis() + 180000;  // 3 minutes, then back to status
     }
     r->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  // Time preview: POST at=YYYY-MM-DDTHH:MM (local) for 30 min, or clear=1.
+  server.on("/api/sim", HTTP_POST, [](AsyncWebServerRequest* r) {
+    if (!authorized(r)) return denied(r);
+    if (param(r, "clear", true) == "1") {
+      {
+        AppGuard g;
+        app.simUntil = 0;
+        app.simOffset = 0;
+        app.simCal = door::CalendarData{};
+      }
+      logf("[sim] time preview cleared");
+      brokerKick();
+      r->send(200, "application/json", "{\"ok\":true,\"message\":\"Back to the real time\"}");
+      return;
+    }
+    String at = param(r, "at", true);
+    struct tm tm = {};
+    int y, mo, dd, hh, mi;
+    if (sscanf(at.c_str(), "%4d-%2d-%2dT%2d:%2d", &y, &mo, &dd, &hh, &mi) != 5 || mo < 1 || mo > 12 || dd < 1 ||
+        dd > 31 || hh > 23 || mi > 59) {
+      r->send(400, "application/json", "{\"error\":\"Pick a date and time\"}");
+      return;
+    }
+    door::Clock now = nowClock();
+    if (!now.valid) {
+      r->send(409, "application/json", "{\"error\":\"Clock not synced yet\"}");
+      return;
+    }
+    tm.tm_year = y - 1900;
+    tm.tm_mon = mo - 1;
+    tm.tm_mday = dd;
+    tm.tm_hour = hh;
+    tm.tm_min = mi;
+    tm.tm_isdst = -1;  // let the TZ rules decide
+    int64_t t = (int64_t)mktime(&tm);
+    if (t < now.now - 90LL * 86400 || t > now.now + 90LL * 86400) {
+      r->send(400, "application/json", "{\"error\":\"Pick a time within 90 days\"}");
+      return;
+    }
+    {
+      AppGuard g;
+      app.simOffset = t - now.now;
+      app.simUntil = millis() + 30UL * 60 * 1000;
+      if (!app.simUntil) app.simUntil = 1;
+      app.simCal = door::CalendarData{};
+    }
+    logf("[sim] previewing %s", at.c_str());
+    brokerKick();
+    r->send(200, "application/json", "{\"ok\":true,\"message\":\"Previewing that time for 30 min\"}");
   });
 
   server.on("/login", HTTP_GET, [](AsyncWebServerRequest* r) {

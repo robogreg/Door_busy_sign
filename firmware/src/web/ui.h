@@ -52,6 +52,12 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
   <div class="sub" id="pvm"></div>
  </div>
  <div class="card">
+  <h2>Preview a time</h2>
+  <p class="sub">Show the sign as it would look at another date and time, using your calendar for then. Nothing is saved, and it goes back to the real time after 30 min.</p>
+  <div class="row"><input type="datetime-local" id="simat" style="flex:1"><button class="btn" id="simgo">Preview</button></div>
+  <button class="btn ghost" id="simclr" style="margin-top:10px;width:100%" hidden>Back to the real time</button>
+ </div>
+ <div class="card">
   <h2>Set status</h2>
   <label>For how long</label>
   <div class="chips" id="dur">
@@ -154,7 +160,10 @@ async function refresh(){
   $('#pvm').textContent=(j.rendering?'Updating the sign now (about 30 s). ':'')+(j.manual?'Manual override':'Automatic')+(j.stale?' (calendar data stale)':'');
   $('#clr').hidden=!j.manual;
   $$('.mood').forEach(b=>b.classList.toggle('on',b.dataset.m===j.mood));$('#mclr').hidden=!j.mood;
-  if(j.mood)$('#pvm').textContent+=', mood: '+j.moodName}catch(e){}}
+  if(j.mood)$('#pvm').textContent+=', mood: '+j.moodName;
+  $('#simclr').hidden=!j.sim;
+  if(j.sim&&j.simAt){const t=new Date(j.simAt*1000).toLocaleString([],{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+   $('#pvm').textContent='PREVIEW of '+t+' ('+Math.ceil(j.simLeft/60)+' min left). '+$('#pvm').textContent}}catch(e){}}
 const MOODS=[['happy','\u{1F600}','Happy'],['chill','\u{1F60E}','Chill'],['focused','\u{1F9D0}','Focused'],['facepalm','\u{1F926}','Facepalm'],
  ['stressed','\u{1F630}','Stressed'],['grumpy','\u{1F620}','Grumpy'],['tired','\u{1F634}','Tired'],['celebrating','\u{1F973}','Celebrating'],
  ['love','\u{1F60D}','Grateful'],['meh','\u{1F610}','Meh'],['sick','\u{1F912}','Under the weather'],['mindblown','\u{1F92F}','Mind blown'],
@@ -177,6 +186,9 @@ $$('.st').forEach(b=>b.onclick=()=>setState(b.dataset.s));
 $('#cgo').onclick=()=>{const m=$('#cm').value.trim();if(!m){toast('Type a message first');return}
  setState('custom','&m='+encodeURIComponent(m)+'&c='+$('#cc').value)};
 $('#clr').onclick=()=>setState('clear');
+async function sim(body){const j=await call('/api/sim',{method:'POST',body});if(j){toast(j.message+'. Sign updates in about 30 s.');setTimeout(refresh,500)}}
+$('#simgo').onclick=()=>{const v=$('#simat').value;if(!v){toast('Pick a date and time');return}const f=new URLSearchParams();f.set('at',v);sim(f)};
+$('#simclr').onclick=()=>{const f=new URLSearchParams();f.set('clear','1');sim(f)};
 const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 $('#s_days').innerHTML=DN.map((d,i)=>'<label><input type="checkbox" data-i="'+i+'">'+d+'</label>').join('');
 let curCals='primary:mine',calsLoaded=false;

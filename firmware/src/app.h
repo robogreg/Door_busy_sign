@@ -39,6 +39,11 @@ struct App {
   door::Mood mood = door::Mood::None;
   int64_t moodSetAt = 0;       // epoch, for the morning reset
   uint32_t galleryUntil = 0;   // millis(); mood gallery test screen while active
+  // Time preview: the sign shows another date and time (offset from real time)
+  // until simUntil (millis). Nothing persistent changes while it runs.
+  int64_t simOffset = 0;
+  uint32_t simUntil = 0;
+  door::CalendarData simCal;   // broker status as of the simulated time
   // Snapshot computed by loop(), read by the web handlers.
   door::Status status;
   std::string timeLine;
@@ -62,6 +67,10 @@ struct AppGuard {
 
 // Current wall clock from the system time (NTP).
 door::Clock nowClock();
+// Wall clock for epoch t in the configured time zone.
+door::Clock clockAt(int64_t t);
+// True while a time preview is running.
+bool simActive();
 
 // Ring-buffer log, also echoed to Serial.
 void logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
