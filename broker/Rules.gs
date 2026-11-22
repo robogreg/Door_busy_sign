@@ -3,17 +3,37 @@
 // Pure functions, no Apps Script services, so the same file runs under Node for
 // tests (broker/test). Time zone work is injected by the caller (Code.gs).
 //
-// Privacy: nothing here reads or returns event titles, descriptions or
-// attendee names. Output is states, times and busy blocks only.
+// Privacy: descriptions and attendee names are never returned. The title of
+// the current event is passed through for the sign unless the event is marked
+// private or confidential, in which case it shows as plain "busy".
 
 var DOOR_PRIORITY = { away: 4, meeting: 3, busy: 2, focus: 1 };
 var DOOR_IGNORED_TYPES = { workingLocation: true, birthday: true };
+var DOOR_TITLE_MAX = 60;
 
 function doorLower_(s) {
   return String(s || "").toLowerCase();
 }
 
-// Turns one Calendar API event into { start, end, state } or null if it does
+// Event title for the sign: null for private events, whitespace collapsed,
+// capped at DOOR_TITLE_MAX characters.
+function doorTitle_(ev) {
+  if (ev.visibility === "private" || ev.visibility === "confidential") return null;
+  // The panel fonts cover Latin-1 only: map common typography, drop the rest (emoji).
+  var t = String(ev.summary || "")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/[^\x20-\x7E -ÿ\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return null;
+  if (t.length > DOOR_TITLE_MAX) t = t.slice(0, DOOR_TITLE_MAX - 3).trim() + "...";
+  return t;
+}
+
+// Turns one Calendar API event into { start, end, state, title } or null if it does
 // not block Greg. cal = { id, mode: "mine" | "all", primary: bool }.
 // me = Greg's email, lowercase. localDateMs("2026-11-20") -> local midnight ms.
 function doorClassifyEvent(ev, cal, me, localDateMs) {
@@ -57,26 +77,34 @@ function doorClassifyEvent(ev, cal, me, localDateMs) {
     }
     var conf = !!(ev.hangoutLink || ev.conferenceData);
     state = others > 0 || conf ? "meeting" : "busy";
+    // A private event just reads "busy" on the door.
+    var priv = ev.visibility === "private" || ev.visibility === "confidential";
+    if (priv) state = "busy";
   }
 
   var start = allDay ? localDateMs(ev.start.date) : Date.parse(ev.start.dateTime);
   var end = allDay ? localDateMs(ev.end.date) : Date.parse(ev.end.dateTime);
   if (!(end > start)) return null;
-  return { start: start, end: end, state: state };
+  return { start: start, end: end, state: state, title: doorTitle_(ev) };
 }
 
-// Rule 8: highest priority segment covering t, else "available".
-function doorStateAt(segs, t) {
-  var best = "available";
-  var bestP = 0;
+// Rule 8: highest priority segment covering t (ties go to the one that started
+// most recently), or null.
+function doorSegAt(segs, t) {
+  var best = null;
   for (var i = 0; i < segs.length; i++) {
     var s = segs[i];
-    if (s.start <= t && t < s.end && DOOR_PRIORITY[s.state] > bestP) {
-      best = s.state;
-      bestP = DOOR_PRIORITY[s.state];
-    }
+    if (!(s.start <= t && t < s.end)) continue;
+    var p = DOOR_PRIORITY[s.state];
+    var bp = best ? DOOR_PRIORITY[best.state] : 0;
+    if (p > bp || (best && p === bp && s.start > best.start)) best = s;
   }
   return best;
+}
+
+function doorStateAt(segs, t) {
+  var s = doorSegAt(segs, t);
+  return s ? s.state : "available";
 }
 
 // Today's blocked time as merged [start, end] pairs clipped to the day.
@@ -105,7 +133,8 @@ function doorBlocks(segs, dayStart, dayEnd, fmtHM) {
 // opts = { now, dayStart, dayEnd, fmtHM(ms) -> "HH:mm", fmtIso(ms) -> ISO with offset }
 function doorComputeStatus(segs, opts) {
   var now = opts.now;
-  var state = doorStateAt(segs, now);
+  var cur = doorSegAt(segs, now);
+  var state = cur ? cur.state : "available";
   var points = [];
   for (var i = 0; i < segs.length; i++) {
     if (segs[i].start > now) points.push(segs[i].start);
@@ -130,6 +159,9 @@ function doorComputeStatus(segs, opts) {
     next: next,
     blocks: doorBlocks(segs, opts.dayStart, opts.dayEnd, opts.fmtHM),
     label: null,
+    title: (cur && cur.title) || null,
+    // Back-to-back events share one "until", so the title carries its own end.
+    titleUntil: cur && cur.title ? opts.fmtIso(cur.end) : null,
     generated: opts.fmtIso(now),
   };
 }
@@ -156,6 +188,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     doorClassifyEvent: doorClassifyEvent,
     doorStateAt: doorStateAt,
+    doorSegAt: doorSegAt,
     doorBlocks: doorBlocks,
     doorComputeStatus: doorComputeStatus,
     doorParseCals: doorParseCals,

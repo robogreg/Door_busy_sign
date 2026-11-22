@@ -97,6 +97,12 @@ static bool parseStatus(const std::string& body, door::CalendarData& out, std::s
     uint16_t a, z;
     if (door::parseHHMM(b[0] | "", a) && door::parseHHMM(b[1] | "", z) && z > a) d.blocks.push_back({a, z});
   }
+  const char* title = doc["title"] | (const char*)nullptr;
+  if (title && *title) {
+    d.title.assign(title, strnlen(title, 80));
+    const char* tu = doc["titleUntil"] | (const char*)nullptr;
+    if (tu) door::parseIso8601(tu, d.titleUntil);
+  }
   d.valid = true;
   out = d;
   return true;

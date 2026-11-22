@@ -282,6 +282,28 @@ void test_calendar_beats_hours_override_beats_calendar() {
   TEST_ASSERT_EQUAL(State::Call, resolve(c, o, h, d).state);
 }
 
+void test_calendar_title_detail() {
+  WorkHours h;
+  Override none;
+  Clock c = at(2, 10, 15);
+  CalendarData d = cal(c, State::Meeting, kMidnight + 11 * 3600);
+  d.title = "Quick sync";
+  d.titleUntil = kMidnight + 10 * 3600 + 30 * 60;
+  TEST_ASSERT_EQUAL_STRING("Quick sync", resolve(c, none, h, d).detail.c_str());
+  // Back-to-back: after the titled event ends, the next poll brings the new title.
+  TEST_ASSERT_EQUAL_STRING("", resolve(at(2, 10, 45), none, h, d).detail.c_str());
+  // After "until" the state rolls to "next", which has no title.
+  d.hasNext = true;
+  d.nextState = State::Busy;
+  d.titleUntil = 0;
+  TEST_ASSERT_EQUAL_STRING("", resolve(at(2, 11, 5), none, h, d).detail.c_str());
+  // A manual override never shows the event title.
+  Override o;
+  o.active = true;
+  o.state = State::Focus;
+  TEST_ASSERT_EQUAL_STRING("", resolve(c, o, h, d).detail.c_str());
+}
+
 void test_calendar_events_show_outside_hours() {
   WorkHours h;
   Clock eve = at(2, 19, 0);
@@ -407,6 +429,7 @@ int main(int, char**) {
   RUN_TEST(test_iso8601);
   RUN_TEST(test_hhmm);
   RUN_TEST(test_calendar_beats_hours_override_beats_calendar);
+  RUN_TEST(test_calendar_title_detail);
   RUN_TEST(test_calendar_events_show_outside_hours);
   RUN_TEST(test_calendar_available_until_next_event);
   RUN_TEST(test_calendar_rolls_to_next_between_polls);

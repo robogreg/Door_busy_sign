@@ -8,7 +8,7 @@ Status: Spec v1, ready to build (Nov 22, 2026)
 An e-paper sign mounted beside Greg's office door that shows whether he is available, in a meeting, on a call, heads down, busy, or away.
 
 - Status follows Google Calendar automatically.
-- Privacy by design: event titles, attendees and descriptions never leave Google. The device only learns a state and times.
+- Privacy by design: attendees and descriptions never leave Google. The current event's title is shown on the sign unless the event is marked private, in which case it reads "busy" with no title (changed Nov 22, 2026; titles were originally excluded).
 - Manual override from a web page hosted on the device itself, including one-tap bookmark URLs (for example "on a call for 30 min").
 - Dashboard-style display with a rotating library of funny one-liners per state.
 - Built and tested at home, then moved to the office, so Wi-Fi changes must never require a reflash.
@@ -24,7 +24,7 @@ An e-paper sign mounted beside Greg's office door that shows whether he is avail
 6. Easy network moves (home to office) with no computer needed.
 
 ### Non-goals (v1)
-- Showing meeting names or attendees (opt-in `#door` labels are v2).
+- Showing attendees or descriptions.
 - Battery operation. The sign is always on, USB-C powered.
 - Internet-wide remote control. Overrides are LAN only.
 
@@ -117,7 +117,7 @@ A bare override (no duration given) always rolls back to the calendar on its own
 7. Event with at least one other attendee or a conference link -> `meeting`. Solo event -> `busy`.
 8. Overlaps across all picked calendars: priority `away` > `meeting` > `busy` > `focus`.
 9. Outside working hours with nothing scheduled -> `gone`.
-10. (v2) Event title containing `#door` may pass a short sanitized label.
+10. Private or confidential events (Google visibility) count as `busy` even with guests or a Meet link, and their title is never returned. Other events pass their title, reduced to Latin-1 and capped at 60 characters.
 
 ### Broker API
 
@@ -130,11 +130,14 @@ A bare override (no duration given) always rolls back to the calendar on its own
   "next": { "state": "available", "at": "2026-11-20T15:30:00-06:00" },
   "blocks": [["09:00","09:30"],["14:00","15:30"]],
   "label": null,
+  "title": "Budget review",
+  "titleUntil": "2026-11-20T15:00:00-06:00",
   "generated": "2026-11-20T14:12:03-06:00"
 }
 ```
 - `blocks`: today's busy time as start/end pairs only (for the timeline strip). No titles.
 - `until`: end of the current state (null if open-ended).
+- `title`: title of the event that sets the current state (highest priority, latest start on ties), null if none or private. `titleUntil` is that event's end, since back-to-back events share one `until`.
 
 `GET <script-url>?token=...&action=calendars`
 
@@ -148,7 +151,7 @@ Errors: `{ "error": "unauthorized" }` or `{ "error": "<message>" }` with HTTP 20
 ### Broker implementation notes
 - Standalone Apps Script project, Advanced Calendar Service enabled.
 - Token and time zone (America/Chicago) in Script Properties. Working hours live only on the device (M3 decision, Nov 22, 2026): the broker returns `available` when nothing is scheduled and the device turns that into `gone` outside working hours (rule 9). Calendar events outside working hours still show.
-- Event fields are requested with a `fields` mask that excludes titles and descriptions, so they never enter the script either.
+- Event fields are requested with a `fields` mask that excludes descriptions and attendee names, so they never enter the script. `summary` and `visibility` are requested for the title rule.
 - Cache computed status ~60 s per `cals` key (CacheService). One call/min is ~1,440/day, within quotas.
 - Keep in repo under `broker/` and deploy with `clasp`.
 
@@ -223,8 +226,8 @@ Served by the ESP32 on port 80. Reachable at the sign's IP and `http://door.loca
 | Zone | Height | Content |
 |---|---|---|
 | Header | ~50 px | "GREG NEEDEL" left, title right (e.g. "CEO, REV Robotics", configurable) |
-| Status band | ~200 px | State label in huge type, inverted on red or black per the status table |
-| Quip | ~70 px | Rotating one-liner, larger italic |
+| Status band | ~200 px | State label in huge type, inverted on red or black per the status table. Mood face at the right end with a "Current mood" caption above it |
+| Quip | ~70 px | Rotating one-liner, larger italic. During a non-private calendar event, the event title replaces it |
 | Time line | ~50 px | "Free at 3:30 PM" / "Free until 2:00 PM" / "Back tomorrow" |
 | Timeline strip | ~70 px | 8a to 6p (follows working hours), busy blocks filled black, red "now" tick, no titles |
 | Footer | ~30 px | Icons: manual override, stale data, Wi-Fi. Last updated time. IP address bottom right |

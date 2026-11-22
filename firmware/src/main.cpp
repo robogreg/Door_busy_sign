@@ -107,7 +107,8 @@ static Frame buildFrame() {
   f.title = app.settings.title;
   f.label = st.label;
   f.band = st.band;
-  f.quip = app.quip;
+  // A non-private calendar event shows its title where the quip would go.
+  f.quip = st.detail.empty() ? app.quip : st.detail;
   f.timeLine = app.timeLine;
   f.manual = st.manual;
   f.muted = st.state == door::State::Away || st.state == door::State::Gone;

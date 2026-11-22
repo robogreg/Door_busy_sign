@@ -2,7 +2,7 @@
 
 An office door status sign: an ESP32 driving a 7.5" red/black/white e-paper panel that follows Google Calendar automatically and can be overridden from a phone or a one-tap bookmark.
 
-- **Calendar driven.** A small Google Apps Script "broker" reads your calendars and returns only a state, times and busy blocks. Event titles, attendees and descriptions never leave Google and never reach the device.
+- **Calendar driven.** A small Google Apps Script "broker" reads your calendars and returns a state, times, busy blocks and the current event's title. Events marked private show as plain BUSY with no title. Attendees and descriptions never leave Google.
 - **Manual overrides.** The sign hosts its own control page (`http://door.local`) with status buttons, durations, custom messages and bookmarkable one-tap URLs like `/s/call?d=30&k=PIN`.
 - **E-paper aware.** A tri-color refresh takes about 26 seconds, so the sign only redraws when the rendered frame actually changes.
 - **Some personality.** A rotating library of one-liners per status, with humor levels.

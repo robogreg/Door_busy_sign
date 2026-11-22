@@ -144,12 +144,40 @@ test("blocks clip to today and end of day shows 24:00", () => {
   assert.deepEqual(R.doorComputeStatus(segs, opts("08:00")).blocks, [["23:00", "24:00"]]);
 });
 
-test("output never contains event text", () => {
-  const e = ev("14:00", "15:00", { summary: "SECRET board meeting", description: "acquisition", attendees: [{ email: ME, self: true }, { email: "ceo@other.com", displayName: "Someone" }] });
+test("title of the current event is passed, never description or attendees", () => {
+  const e = ev("14:00", "15:00", { summary: "  Budget   review ", description: "acquisition", attendees: [{ email: ME, self: true }, { email: "ceo@other.com", displayName: "Someone" }] });
   const seg = classify(e);
-  const out = JSON.stringify(R.doorComputeStatus([seg], opts("14:30")));
-  assert.ok(!/SECRET|acquisition|Someone|ceo@other/.test(out), out);
-  assert.deepEqual(Object.keys(seg).sort(), ["end", "start", "state"]);
+  const out = R.doorComputeStatus([seg], opts("14:30"));
+  assert.equal(out.state, "meeting");
+  assert.equal(out.title, "Budget review");
+  assert.ok(!/acquisition|Someone|ceo@other/.test(JSON.stringify(out)));
+  assert.deepEqual(Object.keys(seg).sort(), ["end", "start", "state", "title"]);
+  assert.equal(R.doorComputeStatus([seg], opts("13:00")).title, null);
+});
+
+test("private and confidential events read busy with no title", () => {
+  for (const visibility of ["private", "confidential"]) {
+    const e = ev("14:00", "15:00", { visibility, summary: "SECRET board meeting", hangoutLink: "https://meet.google.com/x" });
+    const out = R.doorComputeStatus([classify(e)], opts("14:30"));
+    assert.equal(out.state, "busy");
+    assert.equal(out.title, null);
+    assert.ok(!/SECRET/.test(JSON.stringify(out)));
+  }
+  const ooo = classify(ev("14:00", "15:00", { visibility: "private", eventType: "outOfOffice", summary: "Doctor" }));
+  assert.equal(ooo.state, "away");
+  assert.equal(ooo.title, null);
+});
+
+test("long titles are capped; overlapping events show the later one", () => {
+  assert.equal(classify(ev("09:00", "10:00", { summary: "\u{1F680} Launch — René’s plan" })).title, "Launch - René's plan");
+  const long = classify(ev("09:00", "10:00", { summary: "x".repeat(100) })).title;
+  assert.equal(long.length, 60);
+  assert.ok(long.endsWith("..."));
+  const a = classify(ev("09:00", "11:00", { summary: "Long block" }));
+  const b = classify(ev("10:00", "10:30", { summary: "Quick sync" }));
+  assert.equal(R.doorComputeStatus([a, b], opts("10:15")).title, "Quick sync");
+  assert.equal(R.doorComputeStatus([a, b], opts("10:15")).titleUntil, fmtIso(t("10:30")));
+  assert.equal(R.doorComputeStatus([a, b], opts("10:45")).title, "Long block");
 });
 
 test("cals parameter parsing", () => {

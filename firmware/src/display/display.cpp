@@ -120,7 +120,9 @@ struct Painter {
     }
     // With a mood face at the right end, the label shifts left into the remaining space.
     const bool face = f.mood != door::Mood::None;
-    const int16_t faceCx = W - 100, faceCy = bandY + bandH / 2;
+    // "Current mood" caption above the face; the pair is centered in the band.
+    const int16_t moodTop = bandY + (bandH - 152) / 2;
+    const int16_t faceCx = W - 100, faceCy = moodTop + 24 + kMoodDiscRadius;
     const int16_t labelW = face ? W - 80 - 200 : W - 80;
     const int16_t labelCx = face ? (40 + W - 200) / 2 : W / 2;
     u.setForegroundColor(fg);
@@ -128,7 +130,11 @@ struct Painter {
     fitFont(f.label.c_str(), kLabelFonts, sizeof(kLabelFonts) / sizeof(kLabelFonts[0]), labelW);
     int16_t asc = u.getFontAscent();
     centered(f.label.c_str(), labelCx, bandY + bandH / 2 + asc / 2);
-    if (face) drawMoodFace(g, f.mood, faceCx, faceCy);
+    if (face) {
+      u.setFont(u8g2_font_helvB12_tf);
+      centered("Current mood", faceCx, moodTop + 14);
+      drawMoodFace(g, f.mood, faceCx, faceCy);
+    }
 
     // Quip
     u.setForegroundColor(GxEPD_BLACK);

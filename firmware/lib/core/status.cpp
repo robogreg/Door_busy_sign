@@ -161,6 +161,8 @@ Status resolve(const Clock& c, const Override& o, const WorkHours& h, const Cale
     st.until = cu;
     st.band = defaultBand(cs);
     st.label = stateLabel(cs);
+    bool current = cs == cal.state && (cal.until == 0 || c.now < cal.until);
+    if (current && !cal.title.empty() && (cal.titleUntil == 0 || c.now < cal.titleUntil)) st.detail = cal.title;
     return st;
   }
   if (!c.valid) {

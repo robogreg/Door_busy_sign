@@ -55,6 +55,8 @@ struct CalendarData {
   int64_t nextAt = 0;
   std::vector<std::pair<uint16_t, uint16_t>> blocks;  // minutes from local midnight
   int64_t fetchedAt = 0;  // device epoch of the last successful poll
+  std::string title;       // current event title, empty if none or private
+  int64_t titleUntil = 0;  // end of the event the title belongs to
 };
 
 // Calendar data older than this is ignored and working hours take over.
@@ -98,6 +100,7 @@ struct Status {
   bool manual = false;
   int64_t until = 0;  // epoch seconds, 0 = open-ended
   std::string label;
+  std::string detail;  // current calendar event title (shown in place of the quip)
 };
 
 // Override > calendar > working hours. A calendar "available" still becomes

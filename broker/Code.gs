@@ -8,7 +8,7 @@
 
 var DOOR_CACHE_SECONDS = 55;
 var DOOR_EVENT_FIELDS =
-  "items(status,eventType,transparency,start,end," +
+  "items(status,eventType,transparency,visibility,summary,start,end," +
   "attendees(email,self,responseStatus,resource),organizer(email,self)," +
   "hangoutLink,conferenceData(conferenceId)),nextPageToken";
 
@@ -75,7 +75,7 @@ function doorStatus_(calsParam, tz) {
         orderBy: "startTime",
         maxResults: 250,
         pageToken: pageToken,
-        fields: DOOR_EVENT_FIELDS, // titles and descriptions are never requested
+        fields: DOOR_EVENT_FIELDS, // descriptions are never requested
       });
       (res.items || []).forEach(function (ev) {
         var s = doorClassifyEvent(ev, cal, me, localDateMs);

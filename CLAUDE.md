@@ -8,7 +8,7 @@ Project: Door Sign, an ESP32 + 7.5" tri-color e-paper office door status display
 - SPI pins are board-wired and non-default: MOSI 14, SCLK 13, CS 15, DC 27, RST 26, BUSY 25. Always remap SPI.
 - A tri-color refresh takes up to 26 s. Never refresh on a timer tick; render only when the computed frame changes. BUSY timeouts must be at least 30 s.
 - No PSRAM: use GxEPD2 paged drawing; watch heap when the web server is running.
-- Privacy: calendar event titles, attendees and descriptions must never reach the device. The Apps Script broker returns only states, times and busy blocks.
+- Privacy: attendees and descriptions must never reach the device. The broker may return the current event's title, but never for events marked private or confidential (those read as busy).
 - No secrets in the repo. Wi-Fi credentials, broker token and PIN live in NVS. `secrets.h` is gitignored dev-only.
 - Use PlatformIO with the Arduino-ESP32 core. Prefer maintained library forks that build on core 3.x.
 - Keep the status resolver and calendar rules as pure, unit-testable code (PlatformIO native tests).
