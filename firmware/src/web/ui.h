@@ -125,6 +125,12 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
   <div class="row" style="margin-top:12px"><button class="btn ghost" id="rf">Redraw panel</button><button class="btn ghost" id="rb">Reboot</button></div>
   <button class="btn ghost" id="gal" style="margin-top:10px;width:100%">Show all mood faces on the panel (3 min)</button>
  </div>
+ <div class="card"><h2>Firmware update</h2>
+  <p>Choose a firmware.bin built with <code>pio run -d firmware</code> (it is in <code>firmware/.pio/build/esp32dev/</code>). The sign installs it and restarts; the panel redraws about a minute later.</p>
+  <input type="file" id="otaf" accept=".bin">
+  <button class="btn" id="otago" style="width:100%;margin-top:10px">Install update</button>
+  <p id="otast"></p>
+ </div>
  <div class="card"><h2>Calendar broker</h2><table id="brk"></table><pre id="brkr" hidden></pre></div>
  <div class="card links"><h2>One-tap bookmarks</h2><div id="links"><p>Enter your PIN once (set any status) to generate links.</p></div></div>
  <div class="card"><h2>Recent log</h2><pre id="log">Sign in to view.</pre></div>
@@ -237,5 +243,14 @@ async function loadSystem(){const j=await (await fetch('/api/system',{headers:{A
 $('#rf').onclick=async()=>{if(await call('/api/refresh',{method:'POST'}))toast('Redrawing, about 30 s')};
 $('#gal').onclick=async()=>{if(await call('/api/gallery',{method:'POST'}))toast('Drawing all 16 faces, about 30 s')};
 $('#rb').onclick=async()=>{if(confirm('Reboot the sign?')&&await call('/api/reboot',{method:'POST'}))toast('Rebooting')};
+$('#otago').onclick=async()=>{const f=$('#otaf').files[0];if(!f){toast('Choose a firmware.bin first');return}
+ if(!confirm('Install '+f.name+' ('+Math.round(f.size/1024)+' KB) and restart the sign?'))return;
+ const fd=new FormData();fd.append('firmware',f,f.name);$('#otago').disabled=true;$('#otast').textContent='Uploading...';
+ const j=await call('/api/ota',{method:'POST',body:fd});$('#otago').disabled=false;
+ if(!j){$('#otast').textContent='Update failed. The sign keeps running the old firmware.';return}
+ $('#otast').textContent=j.message+' Reconnecting...';
+ const t0=Date.now(),poll=async()=>{try{const s=await (await fetch('/api/system',{headers:{Accept:'application/json'}})).json();
+  if(s.uptime<120){$('#otast').textContent='Back online, firmware '+s.fw+'.';loadSystem();return}}catch(e){}
+  if(Date.now()-t0<120000)setTimeout(poll,3000);else $('#otast').textContent='Not back after 2 min. Check the panel or power-cycle it.'};setTimeout(poll,5000)};
 refresh();setInterval(refresh,5000);renderLinks();
 </script></body></html>)HTML";

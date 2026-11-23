@@ -211,16 +211,19 @@ void loop() {
   if (millis() - last >= 500) {
     last = millis();
     Frame f = buildFrame();
-    bool force, reboot, gallery;
+    bool force, reboot, gallery, updating;
     {
       AppGuard g;
+      updating = app.updating;
       force = app.forceRender;
       app.forceRender = false;
       reboot = app.reboot;
       gallery = app.galleryUntil && (int32_t)(app.galleryUntil - millis()) > 0;
       if (!gallery) app.galleryUntil = 0;
     }
-    if (gallery) {
+    if (updating) {
+      // No new panel refresh while a firmware upload is being written.
+    } else if (gallery) {
       Frame gf;
       gf.gallery = true;
       displayRequest(gf);

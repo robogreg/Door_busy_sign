@@ -53,6 +53,7 @@ struct App {
   bool forceRender = false;
   bool newQuip = false;
   bool reboot = false;
+  bool updating = false;       // firmware upload in progress
 };
 
 extern App app;

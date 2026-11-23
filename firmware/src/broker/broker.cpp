@@ -168,11 +168,13 @@ static void brokerTask(void*) {
   for (;;) {
     bool kicked = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000)) > 0;
     if (WiFi.status() != WL_CONNECTED || !brokerConfigured()) continue;
-    bool wantCals;
+    bool wantCals, updating;
     {
       AppGuard g;
       wantCals = app.broker.calsState == 1;
+      updating = app.updating;
     }
+    if (updating) continue;  // keep heap and Wi-Fi free for a firmware upload
     if (wantCals) pollCalendars();
     if (first || kicked || millis() - last >= kPollMs) {
       first = false;

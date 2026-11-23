@@ -331,7 +331,7 @@ Format:
 - ESPmDNS, DNSServer (captive portal), Preferences (NVS), LittleFS.
 - NTP with POSIX TZ `CST6CDT,M3.2.0,M11.1.0`.
 - HTTPS client for the broker (Google redirects Apps Script responses: follow redirects; use the bundled CA store or pin Google roots).
-- OTA via the System page (Update library).
+- OTA via the System page (Update library): POST /api/ota (multipart firmware.bin, PIN required) writes the spare app slot and reboots only after a verified write. Calendar polls and panel refreshes pause during the upload. `pio run -e ota -t upload` sends the same request with curl. Done in FW 0.7.0.
 - Task watchdog; reboot if the main loop stalls.
 - Do not write a custom Wi-Fi manager on top of WiFiManager; the multi-network list + setup mode is custom but small.
 

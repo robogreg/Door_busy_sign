@@ -39,6 +39,16 @@ Requires [PlatformIO](https://platformio.org/).
    ```
 3. The boot screen shows the sign's IP address. Open it in a browser. The default PIN is `1234`; change it on the Settings page.
 
+After the first USB flash, updates can go over Wi-Fi:
+
+- **From the dashboard:** System tab, "Firmware update". Pick `firmware/.pio/build/esp32dev/firmware.bin` and press Install.
+- **From PlatformIO:** set `DOOR_PIN` to the sign's PIN, then
+  ```
+  pio run -d firmware -e ota -t upload --upload-port <sign IP>
+  ```
+
+The new firmware goes into the spare flash slot and the sign only switches to it after a complete write, so a failed upload leaves the old version running. Wi-Fi credentials still come from `secrets.h` at build time, so build with the network the sign is on.
+
 Host unit tests (needs a host C++ compiler, for example MinGW-w64 on Windows):
 
 ```
@@ -74,4 +84,4 @@ The Status tab has a "Preview a time" card: pick a date and time and the sign (a
 
 ## Status
 
-M1 (bench bring-up), M2 (manual sign) and M3 (calendar) are done. M4 (polish: typography, quip editor, OTA, daily clean refresh) is next.
+M1 (bench bring-up), M2 (manual sign) and M3 (calendar) are done. Wi-Fi firmware updates from M4 are in; the rest of M4 (typography, quip editor, daily clean refresh) is next.

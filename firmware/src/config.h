@@ -1,7 +1,7 @@
 // Door Sign: pins, defaults, version.
 #pragma once
 
-#define FW_VERSION "0.6.0"
+#define FW_VERSION "0.7.0"
 
 // Waveshare E-Paper ESP32 Driver Board. Board-wired, NOT the ESP32 default SPI pins.
 #define EPD_MOSI 14

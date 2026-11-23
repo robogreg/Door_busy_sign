@@ -17,6 +17,7 @@ Project: Door Sign, an ESP32 + 7.5" tri-color e-paper office door status display
 ## Commands (once scaffolded)
 - Build: `pio run -d firmware`
 - Flash: `pio run -d firmware -t upload` (board switch 2 must be ON)
+- Flash over Wi-Fi: set `DOOR_PIN`, then `pio run -d firmware -e ota -t upload --upload-port <sign IP>`
 - Upload web UI/data: `pio run -d firmware -t uploadfs`
 - Serial monitor: `pio device monitor -d firmware -b 115200`
 - Native tests: `pio test -d firmware -e native`

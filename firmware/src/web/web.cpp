@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
+#include <Update.h>
 #include <WiFi.h>
 
 #include "app.h"
@@ -391,6 +392,74 @@ static void handleCalendars(AsyncWebServerRequest* r) {
   r->send(200, "application/json", out);
 }
 
+// ---------- firmware update over Wi-Fi ----------
+// POST /api/ota, multipart with one file field holding firmware.bin
+// (.pio/build/esp32dev/firmware.bin). PIN from the cookie or ?k=. The image goes
+// into the spare app slot; the sign only switches to it after a complete,
+// verified write, then reboots.
+
+static bool gOtaOk = false;      // this upload is authorized and writing
+static String gOtaError;
+
+static void otaFail(const String& why) {
+  gOtaError = why;
+  gOtaOk = false;
+  if (Update.isRunning()) Update.abort();
+  AppGuard g;
+  app.updating = false;
+}
+
+static void handleOtaChunk(AsyncWebServerRequest* r, const String& filename, size_t index, uint8_t* data,
+                           size_t len, bool final) {
+  if (index == 0) {
+    gOtaError = "";
+    gOtaOk = false;
+    if (!authorized(r)) {
+      gOtaError = "unauthorized";
+      return;
+    }
+    {
+      AppGuard g;
+      if (app.updating) {
+        gOtaError = "another update is running";
+        return;
+      }
+      app.updating = true;  // pauses calendar polls and panel refreshes
+    }
+    logf("[ota] receiving %s", filename.c_str());
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) return otaFail(Update.errorString());
+    gOtaOk = true;
+  }
+  if (!gOtaOk) return;
+  if (len && Update.write(data, len) != len) return otaFail(Update.errorString());
+  if (final) {
+    if (!Update.end(true)) return otaFail(Update.errorString());
+    logf("[ota] wrote %u bytes, rebooting into the new firmware", (unsigned)(index + len));
+  }
+}
+
+static void handleOtaDone(AsyncWebServerRequest* r) {
+  if (gOtaError == "unauthorized") return denied(r);
+  JsonDocument d;
+  if (gOtaOk && !Update.isRunning() && Update.isFinished()) {
+    d["ok"] = true;
+    d["message"] = "Update installed. The sign restarts now.";
+    sendJson(r, 200, d);
+    AppGuard g;
+    app.reboot = true;
+    return;
+  }
+  if (gOtaError.isEmpty()) gOtaError = "no firmware file received";
+  if (Update.isRunning()) Update.abort();
+  {
+    AppGuard g;
+    app.updating = false;
+  }
+  logf("[ota] failed: %s", gOtaError.c_str());
+  d["error"] = String("Update failed: ") + gOtaError;
+  sendJson(r, 400, d);
+}
+
 void webBegin() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
     AsyncWebServerResponse* resp = r->beginResponse(200, "text/html", (const uint8_t*)kIndexHtml, strlen_P(kIndexHtml));
@@ -511,6 +580,8 @@ void webBegin() {
     }
     r->send(200, "application/json", "{\"ok\":true}");
   });
+
+  server.on("/api/ota", HTTP_POST, handleOtaDone, handleOtaChunk);
 
   server.on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* r) {
     if (!authorized(r)) return denied(r);
