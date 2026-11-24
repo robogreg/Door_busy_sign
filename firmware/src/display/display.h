@@ -43,6 +43,7 @@ void displayRequest(const Frame& f, bool force = false);
 bool displayBusy();
 uint32_t displayLastMs();
 uint32_t displayCount();
+bool displayLastFast();  // last refresh used the fast black/white mode
 
 // Renders what is on the panel now as a 4-bit BMP, streamed in 32-row slices so
 // it needs only a few KB of RAM. Safe to use from the web server task.

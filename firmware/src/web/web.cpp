@@ -246,6 +246,7 @@ static void handleGetSettings(AsyncWebServerRequest* r) {
     d["we"] = buf;
     d["days"] = s.hours.days;
     d["humor"] = s.humor;
+    d["fast"] = s.fast;
     d["defaultPin"] = s.pin == "1234";
     d["brokerUrl"] = s.brokerUrl;
     d["tokenSet"] = !s.brokerToken.empty();  // never echoed back
@@ -269,6 +270,7 @@ static void handlePostSettings(AsyncWebServerRequest* r) {
   if ((v = param(r, "we", true)).length() && parseHHMM(v, t)) s.hours.endMin = t;
   if ((v = param(r, "days", true)).length()) s.hours.days = (uint8_t)(v.toInt() & 0x7F);
   if ((v = param(r, "humor", true)).length()) s.humor = (uint8_t)constrain(v.toInt(), 0, 2);
+  if ((v = param(r, "fast", true)).length()) s.fast = (uint8_t)constrain(v.toInt(), 0, 3);
   bool pinChanged = false;
   if ((v = param(r, "pin", true)).length()) {
     if (v.length() < 4 || v.length() > 12 || v.indexOf(';') >= 0 || v.indexOf(' ') >= 0) {
@@ -346,6 +348,10 @@ static void handleSystem(AsyncWebServerRequest* r) {
   d["renderMs"] = displayLastMs();
   d["renders"] = displayCount();
   d["rendering"] = displayBusy();
+  d["renderFast"] = displayLastFast();
+  d["webCheckAgo"] = webSelfCheckAgo();
+  d["resetReason"] = (int)esp_reset_reason();
+  d["selfRestarted"] = webSelfCheckRestarted();
   door::Clock c = nowClock();
   d["timeValid"] = c.valid;
   d["time"] = c.valid ? door::formatTime(c.secOfDay) : "";
@@ -409,6 +415,22 @@ static void otaFail(const String& why) {
   app.updating = false;
 }
 
+static volatile uint32_t gOtaLastMs = 0;  // last chunk received, 0 when idle
+
+// An upload that stops partway (the connection dropped) must not leave the sign
+// paused: drop the half-written update and resume polls and refreshes.
+static void otaAbandon(const char* why) {
+  if (!gOtaLastMs) return;
+  gOtaLastMs = 0;
+  gOtaOk = false;
+  if (Update.isRunning()) Update.abort();
+  {
+    AppGuard g;
+    app.updating = false;
+  }
+  logf("[ota] abandoned: %s", why);
+}
+
 static void handleOtaChunk(AsyncWebServerRequest* r, const String& filename, size_t index, uint8_t* data,
                            size_t len, bool final) {
   if (index == 0) {
@@ -426,14 +448,18 @@ static void handleOtaChunk(AsyncWebServerRequest* r, const String& filename, siz
       }
       app.updating = true;  // pauses calendar polls and panel refreshes
     }
+    gOtaLastMs = millis();
+    r->onDisconnect([]() { otaAbandon("connection dropped"); });
     logf("[ota] receiving %s", filename.c_str());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) return otaFail(Update.errorString());
     gOtaOk = true;
   }
   if (!gOtaOk) return;
+  gOtaLastMs = millis() | 1;
   if (len && Update.write(data, len) != len) return otaFail(Update.errorString());
   if (final) {
     if (!Update.end(true)) return otaFail(Update.errorString());
+    gOtaLastMs = 0;
     logf("[ota] wrote %u bytes, rebooting into the new firmware", (unsigned)(index + len));
   }
 }
@@ -460,7 +486,80 @@ static void handleOtaDone(AsyncWebServerRequest* r) {
   sendJson(r, 400, d);
 }
 
+// ---------- self-check ----------
+
+static const uint32_t kRestartMagic = 0x57454221;  // "WEB!"
+RTC_NOINIT_ATTR static uint32_t gRestartNote;
+static bool gSelfRestarted = false;
+static volatile uint32_t gSelfOkMs = 0;
+
+static bool pingSelf() {
+  WiFiClient c;
+  c.setTimeout(5);
+  if (!c.connect(WiFi.localIP(), 80, 5000)) return false;
+  c.print("GET /ping HTTP/1.0\r\n\r\n");
+  uint32_t t0 = millis();
+  String line;
+  while (millis() - t0 < 5000) {
+    if (c.available()) {
+      line = c.readStringUntil('\n');
+      break;
+    }
+    delay(20);
+  }
+  c.stop();
+  return line.indexOf(" 200") > 0;
+}
+
+static void selfCheckTask(void*) {
+  int misses = 0;
+  bool armed = false;  // only restart once a check has passed, so a bad check cannot loop
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(60000));
+    if (gOtaLastMs && millis() - gOtaLastMs > 30000) otaAbandon("no data for 30 s");
+    bool skip;
+    {
+      AppGuard g;
+      skip = app.updating;
+    }
+    if (skip || WiFi.status() != WL_CONNECTED) {
+      misses = 0;
+      continue;
+    }
+    if (pingSelf()) {
+      gSelfOkMs = millis();
+      armed = true;
+      misses = 0;
+      continue;
+    }
+    misses++;
+    logf("[web] self-check failed (%d of 3), heap %u", misses, ESP.getFreeHeap());
+    if (armed && misses >= 3) {
+      logf("[web] web server not answering, restarting");
+      gRestartNote = kRestartMagic;
+      delay(300);
+      ESP.restart();
+    }
+  }
+}
+
+void webStartSelfCheck() { xTaskCreate(selfCheckTask, "webcheck", 4096, nullptr, 1, nullptr); }
+
+bool webSelfCheckRestarted() {
+  static bool read = false;
+  if (!read) {
+    read = true;
+    gSelfRestarted = gRestartNote == kRestartMagic;
+    gRestartNote = 0;
+  }
+  return gSelfRestarted;
+}
+
+long webSelfCheckAgo() { return gSelfOkMs ? (long)((millis() - gSelfOkMs) / 1000) : -1; }
+
 void webBegin() {
+  server.on("/ping", HTTP_GET, [](AsyncWebServerRequest* r) { r->send(200, "text/plain", "ok"); });
+
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
     AsyncWebServerResponse* resp = r->beginResponse(200, "text/html", (const uint8_t*)kIndexHtml, strlen_P(kIndexHtml));
     resp->addHeader("Cache-Control", "no-cache");

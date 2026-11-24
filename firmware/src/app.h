@@ -14,6 +14,7 @@ struct Settings {
   std::string tz = "CST6CDT,M3.2.0,M11.1.0";
   door::WorkHours hours;
   uint8_t humor = 2;  // 0 off, 1 dry, 2 full
+  uint8_t fast = 0;   // fast black/white refresh: 0 off, 1..3 waveform length
   // Calendar broker (M3)
   std::string brokerUrl;    // Apps Script web app .../exec URL
   std::string brokerToken;  // write-only in the UI

@@ -34,7 +34,14 @@ static bool joinWifi() {
     // 201 no AP found, 202/15 auth fail or handshake timeout (usually wrong password)
     logf("[net] disconnected, reason %u", info.wifi_sta_disconnected.reason);
   }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) {
+    logf("[net] got IP %s, RSSI %d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
   WiFi.mode(WIFI_STA);
+  // No modem sleep: a dozing radio misses ARP broadcasts, so other devices lose
+  // the sign's address and the web page stops loading while outgoing calendar
+  // polls still work. Costs about 50 mA more, fine on USB power.
+  WiFi.setSleep(false);
   WiFi.setHostname(MDNS_HOST);
   WiFi.setAutoReconnect(true);
   // Mesh networks: scan all channels and join the strongest node.
@@ -170,6 +177,7 @@ void setup() {
   delay(300);
   Serial.println();
   logf("=== Door Sign FW %s ===", FW_VERSION);
+  logf("[sys] reset reason %d%s", (int)esp_reset_reason(), webSelfCheckRestarted() ? " (web self-check restart)" : "");
 
   storageBegin();
   loadSettings();
@@ -186,6 +194,7 @@ void setup() {
   startTime();
   buildFrame();  // so /status.json is right while the boot screen draws
   webBegin();
+  webStartSelfCheck();
   brokerBegin();
 
   BootInfo b;
@@ -205,8 +214,21 @@ void setup() {
   logf("[sys] ready, heap %u", ESP.getFreeHeap());
 }
 
+// mDNS does not recover by itself after Wi-Fi drops and rejoins: restart it.
+static void watchWifi() {
+  static bool was = true;
+  bool up = WiFi.status() == WL_CONNECTED;
+  if (up && !was) {
+    MDNS.end();
+    if (MDNS.begin(MDNS_HOST)) MDNS.addService("http", "tcp", 80);
+    logf("[net] back online, mDNS restarted");
+  }
+  was = up;
+}
+
 void loop() {
   esp_task_wdt_reset();
+  watchWifi();
   static uint32_t last = 0;
   if (millis() - last >= 500) {
     last = millis();

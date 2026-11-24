@@ -55,6 +55,7 @@ void loadSettings() {
   s.hours.endMin = p.getUShort("we", s.hours.endMin);
   s.hours.days = p.getUChar("days", s.hours.days);
   s.humor = p.getUChar("humor", s.humor);
+  s.fast = p.getUChar("fast", s.fast);
   s.brokerUrl = getStr(p, "burl", s.brokerUrl);
   s.brokerToken = getStr(p, "btok", s.brokerToken);
   s.cals = getStr(p, "cals", s.cals);
@@ -74,6 +75,7 @@ void saveSettings() {
   p.putUShort("we", s.hours.endMin);
   p.putUChar("days", s.hours.days);
   p.putUChar("humor", s.humor);
+  p.putUChar("fast", s.fast);
   p.putString("burl", s.brokerUrl.c_str());
   p.putString("btok", s.brokerToken.c_str());
   p.putString("cals", s.cals.c_str());

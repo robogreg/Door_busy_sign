@@ -331,7 +331,9 @@ Format:
 - ESPmDNS, DNSServer (captive portal), Preferences (NVS), LittleFS.
 - NTP with POSIX TZ `CST6CDT,M3.2.0,M11.1.0`.
 - HTTPS client for the broker (Google redirects Apps Script responses: follow redirects; use the bundled CA store or pin Google roots).
-- OTA via the System page (Update library): POST /api/ota (multipart firmware.bin, PIN required) writes the spare app slot and reboots only after a verified write. Calendar polls and panel refreshes pause during the upload. `pio run -e ota -t upload` sends the same request with curl. Done in FW 0.7.0.
+- OTA via the System page (Update library): POST /api/ota (multipart firmware.bin, PIN required) writes the spare app slot and reboots only after a verified write. Calendar polls and panel refreshes pause during the upload. `pio run -e ota -t upload` sends the same request with curl. Done in FW 0.7.0. An upload that stops partway is dropped and the sign resumes (FW 0.8.1).
+- Fast refresh (experimental, Settings, FW 0.8.0): black and white partial updates on the UC8179 in about 3.7 s instead of about 27 s. Red draws as black until the next full color refresh, which runs after 10 quiet minutes or every 12 fast updates; Redraw and the gallery always use a full refresh.
+- Web self-check (FW 0.8.1): Wi-Fi modem sleep is off (it made the page unreachable while outgoing polls still worked), mDNS restarts after a Wi-Fi rejoin, and the sign fetches its own /ping every minute and restarts after three misses in a row.
 - Task watchdog; reboot if the main loop stalls.
 - Do not write a custom Wi-Fi manager on top of WiFiManager; the multi-network list + setup mode is custom but small.
 

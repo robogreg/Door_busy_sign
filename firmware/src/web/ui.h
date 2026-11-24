@@ -3,7 +3,9 @@
 
 static const char kIndexHtml[] PROGMEM = R"HTML(<!doctype html>
 <html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#e8641f"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Door Sign">
 <title>Door Sign</title>
 <style>
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1b1b1b;--muted:#6b6b6b;--line:#e2e0db;--accent:#e8641f;--red:#c0182b;--black:#1b1b1b}
@@ -40,6 +42,17 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
 .links a{display:block;color:var(--accent);word-break:break-all;margin:4px 0;font-size:14px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
 #toast.on{opacity:1}.warn{color:var(--red);font-weight:600}
+.row>*{min-width:0}.row>.btn{flex:none}
+button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+@media (max-width:600px){
+header{position:sticky;top:0;z-index:5;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top))}
+header h1{font-size:17px}nav button{padding:10px 10px}
+main{padding:12px 12px max(16px,env(safe-area-inset-bottom))}.card{padding:14px;margin-bottom:12px}
+.chip{padding:10px 14px;font-size:15px}
+.grid{grid-template-columns:1fr 1fr}.st{min-height:64px;font-size:17px}
+.moods{grid-template-columns:repeat(4,1fr)}
+.btn{min-height:46px}td:first-child{width:45%}
+}
 </style></head><body>
 <header><h1>Door Sign</h1><nav>
 <button data-tab="home" class="on">Status</button><button data-tab="settings">Settings</button><button data-tab="system">System</button>
@@ -50,12 +63,6 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
   <h2>On the sign now</h2>
   <img id="sign" class="sign" alt="Current sign image">
   <div class="sub" id="pvm"></div>
- </div>
- <div class="card">
-  <h2>Preview a time</h2>
-  <p class="sub">Show the sign as it would look at another date and time, using your calendar for then. Nothing is saved, and it goes back to the real time after 30 min.</p>
-  <div class="row"><input type="datetime-local" id="simat" style="flex:1"><button class="btn" id="simgo">Preview</button></div>
-  <button class="btn ghost" id="simclr" style="margin-top:10px;width:100%" hidden>Back to the real time</button>
  </div>
  <div class="card">
   <h2>Set status</h2>
@@ -75,6 +82,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
    <button class="st" data-s="away">Away</button>
   </div>
  </div>
+ <button class="btn ghost" id="clr" style="width:100%;margin-bottom:12px">Back to calendar</button>
  <div class="card">
   <h2>Custom message</h2>
   <input id="cm" maxlength="32" placeholder="Back at 3">
@@ -89,7 +97,12 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
   <button class="btn ghost" id="mclr" style="margin-top:10px">Clear mood</button>
   <div class="sub" style="text-align:left">Clears itself each morning at the start of working hours.</div>
  </div>
- <button class="btn ghost" id="clr" style="width:100%">Back to calendar</button>
+ <div class="card">
+  <h2>Preview a time</h2>
+  <p class="sub">Show the sign as it would look at another date and time, using your calendar for then. Nothing is saved, and it goes back to the real time after 30 min.</p>
+  <div class="row"><input type="datetime-local" id="simat" style="flex:1"><button class="btn" id="simgo">Preview</button></div>
+  <button class="btn ghost" id="simclr" style="margin-top:10px;width:100%" hidden>Back to the real time</button>
+ </div>
 </section>
 
 <section id="settings">
@@ -98,6 +111,8 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;backgroun
   <label>Name</label><input id="s_name" maxlength="32">
   <label>Title</label><input id="s_title" maxlength="40">
   <label>Humor</label><select id="s_humor"><option value="0">Off</option><option value="1">Dry</option><option value="2">Full</option></select>
+  <label>Screen refresh (experimental)</label><select id="s_fast"><option value="0">Full color (about 27 s)</option><option value="1">Fast black and white: quick</option><option value="2">Fast black and white: balanced</option><option value="3">Fast black and white: strong</option></select>
+  <p class="sub" style="text-align:left">Fast mode draws changes in black and white in a few seconds, then does a full color refresh after 10 quiet minutes or every 12 updates. Not supported by the panel maker.</p>
  </div>
  <div class="card">
   <h2>Working hours</h2>
@@ -200,7 +215,7 @@ $('#s_days').innerHTML=DN.map((d,i)=>'<label><input type="checkbox" data-i="'+i+
 let curCals='primary:mine',calsLoaded=false;
 function calMap(){const m={};curCals.split(',').forEach(p=>{p=p.trim();if(!p)return;const i=p.lastIndexOf(':');m[i>0?p.slice(0,i):p]=i>0?p.slice(i+1):'mine'});return m}
 async function loadSettings(){const j=await call('/api/settings');if(!j)return;
- $('#s_name').value=j.name;$('#s_title').value=j.title;$('#s_humor').value=j.humor;$('#s_ws').value=j.ws;$('#s_we').value=j.we;
+ $('#s_name').value=j.name;$('#s_title').value=j.title;$('#s_humor').value=j.humor;$('#s_fast').value=j.fast||0;$('#s_ws').value=j.ws;$('#s_we').value=j.we;
  $$('#s_days input').forEach(c=>c.checked=!!(j.days&(1<<c.dataset.i)));$('#pinwarn').hidden=!j.defaultPin;
  $('#s_burl').value=j.brokerUrl||'';$('#s_btok').value='';$('#s_btok').placeholder=j.tokenSet?'Set (leave blank to keep)':'Not set';
  curCals=j.cals||'primary:mine';if(!calsLoaded)$('#calst').textContent='Showing: '+curCals.split(',').length+' calendar(s). Load calendars to change.'}
@@ -220,7 +235,7 @@ $('#lcal').onclick=async()=>{$('#calst').textContent='Asking the broker...';
   if(j.state==='error'){$('#calst').textContent='Failed: '+j.error+'. Save the broker URL and token first.';return}}
  $('#calst').textContent='Timed out. Check the broker URL and token on the System page.'};
 $('#ssave').onclick=async()=>{const f=new URLSearchParams();
- f.set('name',$('#s_name').value);f.set('title',$('#s_title').value);f.set('humor',$('#s_humor').value);
+ f.set('name',$('#s_name').value);f.set('title',$('#s_title').value);f.set('humor',$('#s_humor').value);f.set('fast',$('#s_fast').value);
  f.set('ws',$('#s_ws').value);f.set('we',$('#s_we').value);
  let d=0;$$('#s_days input').forEach(c=>{if(c.checked)d|=1<<c.dataset.i});f.set('days',d);
  f.set('brokerUrl',$('#s_burl').value.trim());if($('#s_btok').value.trim())f.set('token',$('#s_btok').value.trim());
@@ -233,7 +248,7 @@ async function loadSystem(){const j=await (await fetch('/api/system',{headers:{A
  const up=j.uptime,h=Math.floor(up/3600),m=Math.floor(up%3600/60);
  const rows=[['Firmware',j.fw],['IP address',j.ip],['Hostname',j.host],['MAC',j.mac],['Network',j.ssid+' ('+j.rssi+' dBm)'],
   ['Uptime',h+' h '+m+' min'],['Clock',j.timeValid?j.time:'not synced'],['Free heap',j.heap+' (min '+j.heapMin+')'],
-  ['Last refresh',(j.renderMs/1000).toFixed(1)+' s'+(j.rendering?' (drawing now)':'')],['Refreshes',j.renders]];
+  ['Last refresh',(j.renderMs/1000).toFixed(1)+' s'+(j.renderFast?' (fast)':'')+(j.rendering?' (drawing now)':'')],['Refreshes',j.renders]];
  $('#sys').innerHTML=rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('');
  const b=j.broker||{},ago=s=>s<0?'never':s<90?s+' s ago':Math.round(s/60)+' min ago';
  const br=b.configured?[['Last poll',ago(b.lastPollAgo)],['Last success',ago(b.lastOkAgo)],['Error',b.error||'none']]:[['Status','Not configured. Add the broker URL and token in Settings.']];

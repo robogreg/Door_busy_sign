@@ -9,12 +9,88 @@
 #include "config.h"
 #include "faces.h"
 
-// Driver subclass only to lengthen the BUSY timeout (protected in GxEPD2_EPD).
+// Driver subclass: a longer BUSY timeout, plus an experimental fast black and
+// white refresh (protected members of GxEPD2_EPD).
+//
+// Fast refresh runs the UC8179 controller in KW (black/white) mode with LUTs
+// from registers instead of the panel's OTP tri-color waveform. RAM 0x10 holds
+// the OLD image and 0x13 the NEW one; only pixels that change are driven, with
+// charge-balanced pulses taken from GxEPD2's GDEW075T7 partial LUTs (same
+// controller), scaled longer for the slower tri-color film. Red is drawn as
+// black. Unsupported by the panel maker, so it is off by default and the sign
+// still does a full color refresh regularly.
 class Epd750cZ08Long : public GxEPD2_750c_Z08 {
  public:
   Epd750cZ08Long(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
       : GxEPD2_750c_Z08(cs, dc, rst, busy) {
     _busy_timeout = EPD_BUSY_TIMEOUT_US;
+  }
+  // strength 1..3 scales the waveform: about 70, 140 or 210 frames.
+  void fastInit(uint8_t strength) {
+    if (_hibernating) _reset();  // controller was asleep
+    // Same base setup as GxEPD2_750c_Z08::_InitDisplay (private there).
+    _writeCommand(0x01);  // power setting: VGH/VGL 20 V, VDH/VDL 15 V
+    _writeData(0x07);
+    _writeData(0x07);
+    _writeData(0x3F);
+    _writeData(0x3F);
+    _writeCommand(0x61);  // resolution 800 x 480
+    _writeData(WIDTH / 256);
+    _writeData(WIDTH % 256);
+    _writeData(HEIGHT / 256);
+    _writeData(HEIGHT % 256);
+    _writeCommand(0x15);
+    _writeData(0x00);
+    _writeCommand(0x60);  // TCON
+    _writeData(0x22);
+    _writeCommand(0x00);  // panel setting: LUT from registers, KW mode
+    _writeData(0x3F);
+    _writeCommand(0x82);  // VCOM DC -2.0 V, as GxEPD2 uses for the T7 partial LUT
+    _writeData(0x26);
+    _writeCommand(0x50);  // VCOM and data interval: border LUT, copy NEW to OLD after refresh
+    _writeData(0x39);
+    _writeData(0x07);
+    const uint8_t m = strength < 1 ? 1 : strength > 3 ? 3 : strength;
+    lut(0x20, 0x00, m);  // VCOM
+    lut(0x21, 0x00, m);  // white stays white: not driven
+    lut(0x22, 0x5A, m);  // black to white
+    lut(0x23, 0x84, m);  // white to black
+    lut(0x24, 0x00, m);  // black stays black: not driven
+    lut(0x25, 0x00, m);  // border
+    _using_partial_mode = false;
+  }
+  void planeBegin(uint8_t cmd) { _writeCommand(cmd); }
+  void planeBytes(const uint8_t* d, size_t n) {
+    _startTransfer();
+    for (size_t i = 0; i < n; i++) _transfer(d[i]);
+    _endTransfer();
+  }
+  void fastRefresh() {
+    if (!_power_is_on) {
+      _writeCommand(0x04);
+      _waitWhileBusy("fast power on", 200);
+      _power_is_on = true;
+    }
+    _writeCommand(0x12);
+    _waitWhileBusy("fast", 3000);
+    _writeCommand(0x02);  // power off, but no deep sleep: RAM keeps the OLD image
+    _waitWhileBusy("fast power off", 200);
+    _power_is_on = false;
+  }
+  // Back to the stock tri-color setup: a hardware reset clears our registers.
+  void resetController() {
+    _reset();
+    _power_is_on = false;
+    _using_partial_mode = false;
+  }
+  bool asleep() const { return _hibernating; }
+
+ private:
+  void lut(uint8_t cmd, uint8_t levels, uint8_t m) {
+    // One group: 4 phase levels (2 bits each), 4 phase lengths in frames, repeat.
+    const uint8_t g[6] = {levels, (uint8_t)(30 * m), (uint8_t)(5 * m), (uint8_t)(30 * m), (uint8_t)(5 * m), 1};
+    _writeCommand(cmd);
+    for (int i = 0; i < 60; i++) _writeData(i < 6 ? g[i] : (uint8_t)0);
   }
 };
 
@@ -34,6 +110,15 @@ static uint32_t gRequestedHash = 0;
 static uint32_t gDrawnHash = 0;
 static volatile bool gBusy = false;
 static volatile uint32_t gLastMs = 0, gCount = 0;
+static volatile bool gLastFast = false;
+// Fast refresh bookkeeping (render task only).
+static bool gOldValid = false;   // controller RAM 0x10 holds gDrawn in black/white
+static bool gFastDirty = false;  // registers changed since the last reset
+static uint8_t gFastCount = 0;   // fast refreshes since the last full one
+static uint32_t gLastRenderMs = 0;
+static const uint8_t kFullEvery = 12;               // full color refresh after this many fast ones
+static const uint32_t kCleanupMs = 10 * 60 * 1000;  // and after 10 quiet minutes
+static void writePlane(uint8_t cmd, const Frame& f, const std::string& updated);
 
 uint32_t Frame::hash() const {
   uint32_t h = door::fnv1a(name);
@@ -294,16 +379,29 @@ void drawBootScreen(const BootInfo& b) {
 static void renderTask(void*) {
   Painter p{display, u8g2};
   for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    bool kicked = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(30000)) > 0;
+    uint8_t fast;
+    bool updating;
+    {
+      AppGuard g;
+      fast = app.settings.fast;
+      updating = app.updating;
+    }
     Frame f;
-    bool force;
+    bool force, cleanup = false;
     xSemaphoreTake(gFrameLock, portMAX_DELAY);
-    f = gPending;
-    force = gForce;
-    gForce = false;
+    f = kicked ? gPending : gDrawn;
+    force = kicked && gForce;
+    if (kicked) gForce = false;
     xSemaphoreGive(gFrameLock);
     uint32_t h = f.hash();
-    if (h == gDrawnHash && !force) continue;
+    if (!kicked) {
+      // Idle: after fast refreshes, restore red and clear ghosting once things are quiet.
+      if (updating || gFastCount == 0 || millis() - gLastRenderMs < kCleanupMs || !gDrawnHash) continue;
+      cleanup = true;
+    } else if (h == gDrawnHash && !force) {
+      continue;
+    }
 
     door::Clock c = nowClock();
     if (f.sim && c.valid) {
@@ -311,17 +409,55 @@ static void renderTask(void*) {
       c = clockAt(c.now + app.simOffset);
     }
     std::string updated = c.valid ? door::formatTime(c.secOfDay) : "";
-    logf("[epd] render '%s' / '%s'", f.label.c_str(), f.timeLine.c_str());
+    const bool useFast = fast && !force && !cleanup && !f.gallery && !gDrawn.gallery && gDrawnHash &&
+                         gFastCount < kFullEvery;
+    logf("[epd] %s render '%s' / '%s'", useFast ? "fast" : cleanup ? "cleanup" : "full", f.label.c_str(),
+         f.timeLine.c_str());
     gBusy = true;
     uint32_t t0 = millis();
-    display.setFullWindow();
-    display.firstPage();
-    do {
-      if (f.gallery) p.gallery();
-      else p.status(f, updated);
-    } while (display.nextPage());
-    display.hibernate();
+    if (useFast) {
+      auto& epd = display.epd2;
+      if (epd.asleep()) gOldValid = false;
+      epd.fastInit(fast);
+      gFastDirty = true;
+      if (!gOldValid) {
+        xSemaphoreTake(gFrameLock, portMAX_DELAY);
+        Frame prev = gDrawn;
+        std::string prevUpdated = gDrawnUpdated;
+        xSemaphoreGive(gFrameLock);
+        writePlane(0x10, prev, prevUpdated);
+      }
+      writePlane(0x13, f, updated);
+      uint32_t t1 = millis();
+      epd.fastRefresh();
+      logf("[epd] fast: data %lu ms, waveform %lu ms", (unsigned long)(t1 - t0), (unsigned long)(millis() - t1));
+      gOldValid = true;  // the controller copied NEW to OLD
+      gFastCount++;
+    } else {
+      if (gFastDirty) {
+        display.epd2.resetController();
+        gFastDirty = false;
+      }
+      display.setFullWindow();
+      display.firstPage();
+      do {
+        if (f.gallery) p.gallery();
+        else p.status(f, updated);
+      } while (display.nextPage());
+      gFastCount = 0;
+      if (fast && !f.gallery) {
+        // Stay awake and load this screen as the OLD image for the next fast refresh.
+        display.powerOff();
+        writePlane(0x10, f, updated);
+        gOldValid = true;
+      } else {
+        display.hibernate();
+        gOldValid = false;
+      }
+    }
     gLastMs = millis() - t0;
+    gLastFast = useFast;
+    gLastRenderMs = millis();
     gCount++;
     gDrawnHash = h;
     xSemaphoreTake(gFrameLock, portMAX_DELAY);
@@ -352,6 +488,7 @@ void displayRequest(const Frame& f, bool force) {
 bool displayBusy() { return gBusy; }
 uint32_t displayLastMs() { return gLastMs; }
 uint32_t displayCount() { return gCount; }
+bool displayLastFast() { return gLastFast; }
 
 // ---------- web preview ----------
 
@@ -388,6 +525,8 @@ class StripCanvas : public Adafruit_GFX {
     return (r_[i] & bit) ? 2 : (k_[i] & bit) ? 1 : 0;
   }
   int16_t y0() const { return y0_; }
+  // Black or red ink bits for 8 pixels (MSB first).
+  uint8_t ink(int16_t row, int16_t xb) const { return k_[row * (W / 8) + xb] | r_[row * (W / 8) + xb]; }
 
  private:
   void set(int16_t x, int16_t row, uint16_t c) {
@@ -430,6 +569,30 @@ void bmpHeader(uint8_t* h) {
 }
 
 }  // namespace
+
+// Streams frame f into controller RAM (0x10 OLD or 0x13 NEW) as one black/white
+// plane, red drawn as black, rendered in 32-row strips.
+static void writePlane(uint8_t cmd, const Frame& f, const std::string& updated) {
+  static StripCanvas* cv = nullptr;  // 6.4 KB, kept once fast refresh is used
+  static U8G2_FOR_ADAFRUIT_GFX u;
+  if (!cv) {
+    cv = new StripCanvas;
+    u.begin(*cv);
+  }
+  Painter p{*cv, u};
+  auto& epd = display.epd2;
+  epd.planeBegin(cmd);
+  uint8_t row[W / 8];
+  for (int16_t y0 = 0; y0 < H; y0 += StripCanvas::kRows) {
+    cv->begin(y0);
+    if (f.gallery) p.gallery();
+    else p.status(f, updated);
+    for (int16_t r = 0; r < StripCanvas::kRows && y0 + r < H; r++) {
+      for (int16_t xb = 0; xb < W / 8; xb++) row[xb] = ~cv->ink(r, xb);  // 1 = white
+      epd.planeBytes(row, sizeof(row));
+    }
+  }
+}
 
 struct DisplayPreview::Impl {
   Frame frame;
